@@ -16,3 +16,10 @@ This file records judgment calls and interpretations. Numeric gameplay values st
 ## Collision acceptance interpretation
 
 - `06-implementation-roadmap.md` says the Guardsman cannot jump a 2-unit block. Under the authoritative `07 §7.3` moving wall-band rule, however, a collider stops blocking once its top is below `feet + stepHeight`; while airborne, that gives the Guardsman an effective obstacle-crossing envelope of roughly `1.5 jump + 0.9 step = 2.4` units. The implementation follows `07` as required. Phase 2 therefore measures the three exact free-jump apices and supplies 2- and 5-unit calibration blocks visually, but does not alter wall collision to manufacture the older 2-unit expectation.
+- `04 §4.3` calls the 5.333-unit line terrain “over-the-head” for a Guardsman, but the authoritative body constants make the Guardsman 5.8 units tall with eyes at 5.4. The exact mandated obstacle height is retained; in first person it reads at the eye line rather than literally above the head.
+
+## Battlefield layout and massing
+
+- The example layout's long lines overlap the corner large rectangles when converted literally. They are shifted to `(8, 27)` and `(-8, -27)` board inches, and the short lines are placed as two rotationally symmetric pairs. The center-heavy composition and 180-degree symmetry are preserved.
+- Large ruin wall tops extend one board inch above their highest floor, using the documented 1-board-inch line height as the visual parapet increment. Walkable slab tops remain exactly 16 and 32 units and slab thickness remains exactly 0.8.
+- Standard ruin openings are 6.5 units wide. The two polygon ruins deliberately use the permitted 2.5-unit small-body gap so the body-width traversal contrast exists on the final board.

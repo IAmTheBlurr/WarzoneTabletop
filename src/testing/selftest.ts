@@ -1,6 +1,12 @@
-import { FIXED_TIMESTEP, GAME, type BodyId } from '../constants';
+import * as THREE from 'three';
+import { FIXED_TIMESTEP, GAME, type BodyId, type BodyProfile } from '../constants';
+import {
+  detectGround,
+  moveAndResolveHorizontal,
+  type StaticCollider,
+} from '../player/collision';
 import type { ControllerSnapshot } from '../player/controller';
-import { PHASE_TWO_COURSE } from '../world/board';
+import { boardInchesToWorld } from '../world/layout';
 
 export interface TestApi {
   snapshot(): ControllerSnapshot;
@@ -10,6 +16,18 @@ export interface TestApi {
   step(seconds: number): ControllerSnapshot;
   jump(): void;
   switchBody(body: BodyId): void;
+  colliders(): Array<{
+    id: string;
+    min: [number, number, number];
+    max: [number, number, number];
+  }>;
+  terrainSamples(): Array<{ label: string; x: number; y: number; z: number }>;
+  worldStats(): {
+    footprintPieces: number;
+    colliders: number;
+    terrainMeshes: number;
+    groundTargetNames: string[];
+  };
   reset(): void;
 }
 
@@ -204,10 +222,15 @@ export function runPhaseTwoSelfTest(api: TestApi): void {
       closeTo(primarisPeak, GAME.bodies.primaris.jumpHeightUnits, 0.2),
   });
 
-  const block = PHASE_TWO_COURSE.highBlock;
+  const block = api.colliders()[0];
+  if (!block) throw new Error('Phase 2 collision test needs one world collider.');
   api.switchBody('sister');
   api.step(GAME.camera.eyeHeightLerpSeconds);
-  api.teleport(block.x - block.width / 2 - GAME.bodies.sister.capsuleRadiusUnits - 0.01, 0, block.z);
+  api.teleport(
+    block.min[0] - GAME.bodies.sister.capsuleRadiusUnits - 0.01,
+    0,
+    (block.min[2] + block.max[2]) / 2,
+  );
   const beforeSwap = api.snapshot().position[0];
   api.switchBody('primaris');
   const afterSwap = api.snapshot().position[0];
@@ -218,7 +241,7 @@ export function runPhaseTwoSelfTest(api: TestApi): void {
       afterSwap < beforeSwap &&
       closeTo(
         afterSwap,
-        block.x - block.width / 2 - GAME.bodies.primaris.capsuleRadiusUnits,
+        block.min[0] - GAME.bodies.primaris.capsuleRadiusUnits,
         0.02,
       ),
   });
@@ -233,6 +256,203 @@ export function runPhaseTwoSelfTest(api: TestApi): void {
   panel.dataset.status = passed === results.length ? 'passed' : 'failed';
   panel.innerHTML = `
     <p>Phase 2 measured acceptance</p>
+    <h2>${passed}/${results.length} checks passed</h2>
+    <ol>${results
+      .map(
+        (result) => `
+          <li data-status="${result.passed ? 'passed' : 'failed'}">
+            <strong>${result.passed ? 'PASS' : 'FAIL'} — ${result.label}</strong>
+            <span>${result.detail}</span>
+          </li>`,
+      )
+      .join('')}</ol>`;
+  document.body.append(panel);
+}
+
+function makeCollider(
+  id: string,
+  min: readonly [number, number, number],
+  max: readonly [number, number, number],
+): StaticCollider {
+  return {
+    id,
+    bounds: new THREE.Box3(
+      new THREE.Vector3(...min),
+      new THREE.Vector3(...max),
+    ),
+  };
+}
+
+function testWallSlide(body: BodyProfile): boolean {
+  const wall = makeCollider('wall', [0, 0, -10], [2, 12, 10]);
+  const pos = new THREE.Vector3(-2, 0, -3);
+  const velocity = new THREE.Vector3(4, 0, 5);
+  moveAndResolveHorizontal(pos, velocity, 0.5, body, [wall]);
+  return closeTo(pos.x, -body.capsuleRadiusUnits, 0.01) && pos.z > -1;
+}
+
+function testAutoStepAndBarricade(body: BodyProfile): boolean {
+  const debris = makeCollider('debris', [0, 0, -1], [1, 0.5, 1]);
+  const barricade = makeCollider(
+    'barricade',
+    [0, 0, -1],
+    [1, boardInchesToWorld(1), 1],
+  );
+  const debrisPos = new THREE.Vector3(-2, 0, 0);
+  const debrisVelocity = new THREE.Vector3(4, 0, 0);
+  const barricadePos = new THREE.Vector3(-2, 0, 0);
+  const barricadeVelocity = new THREE.Vector3(4, 0, 0);
+  for (let step = 0; step < GAME.physics.fixedTimestepHz; step += 1) {
+    moveAndResolveHorizontal(debrisPos, debrisVelocity, FIXED_TIMESTEP, body, [debris]);
+    moveAndResolveHorizontal(
+      barricadePos,
+      barricadeVelocity,
+      FIXED_TIMESTEP,
+      body,
+      [barricade],
+    );
+  }
+  return debrisPos.x > 1 && closeTo(barricadePos.x, -body.capsuleRadiusUnits, 0.01);
+}
+
+function canPassGap(body: BodyProfile, gap: number): boolean {
+  const walls = [
+    makeCollider('left', [-10, 0, 0], [-gap / 2, 12, 5]),
+    makeCollider('right', [gap / 2, 0, 0], [10, 12, 5]),
+  ];
+  const pos = new THREE.Vector3(0, 0, -3);
+  const velocity = new THREE.Vector3(0, 0, 6);
+  moveAndResolveHorizontal(pos, velocity, 1, body, walls);
+  return pos.z > 1;
+}
+
+function testOffsetRayStability(): boolean {
+  const group = new THREE.Group();
+  const slab = new THREE.Mesh(
+    new THREE.BoxGeometry(10, GAME.terrainLevels.slabThicknessWorldUnits, 10),
+    new THREE.MeshBasicMaterial(),
+  );
+  slab.position.y =
+    (GAME.terrainLevels.levels[0]?.floorWorldUnits ?? 16) -
+    GAME.terrainLevels.slabThicknessWorldUnits / 2;
+  group.add(slab);
+  group.updateMatrixWorld(true);
+  const pos = new THREE.Vector3(
+    5 + GAME.bodies.primaris.capsuleRadiusUnits * 0.3,
+    GAME.terrainLevels.levels[0]?.floorWorldUnits ?? 16,
+    0,
+  );
+  return detectGround(pos, 0, GAME.bodies.primaris, {
+    collidables: [],
+    groundRaycastGroup: group,
+  }).grounded;
+}
+
+export function runPhaseThreeSelfTest(api: TestApi): void {
+  const results: TestResult[] = [];
+  const stats = api.worldStats();
+  results.push({
+    label: 'Footprint and terrain registration',
+    detail: `${stats.footprintPieces} decals / ${stats.terrainMeshes} terrain meshes / ${stats.colliders} AABBs`,
+    passed:
+      stats.footprintPieces === 16 &&
+      stats.terrainMeshes === stats.colliders &&
+      stats.groundTargetNames.every((name) => !name.startsWith('footprint-')),
+  });
+
+  results.push({
+    label: 'Wall slide and inside-corner resolve',
+    detail: '45° velocity preserves the free axis; two-pass resolver remains bounded',
+    passed: testWallSlide(GAME.bodies.primaris),
+  });
+
+  results.push({
+    label: 'Five-ray slab-edge stability',
+    detail: 'center beyond edge; inward 0.7r offset retains Level-1 contact',
+    passed: testOffsetRayStability(),
+  });
+
+  results.push({
+    label: 'Wall-band auto-step and barricade',
+    detail: '0.5u debris passes; 5.33u barricade blocks',
+    passed: testAutoStepAndBarricade(GAME.bodies.guardsman),
+  });
+
+  const narrowGap = 2.5;
+  const standardGap = GAME.collision.minDoorwayWidthUnits;
+  results.push({
+    label: 'Body-width doorway matrix',
+    detail: `2.5u: Guardsman ${canPassGap(GAME.bodies.guardsman, narrowGap) ? 'pass' : 'block'}, Primaris ${canPassGap(GAME.bodies.primaris, narrowGap) ? 'pass' : 'block'} · 5u: both pass`,
+    passed:
+      canPassGap(GAME.bodies.guardsman, narrowGap) &&
+      !canPassGap(GAME.bodies.primaris, narrowGap) &&
+      canPassGap(GAME.bodies.guardsman, standardGap) &&
+      canPassGap(GAME.bodies.primaris, standardGap),
+  });
+
+  const samples = api.terrainSamples();
+  const levelOne = samples.find((sample) => closeTo(sample.y, 16, 0.01));
+  const levelTwo = samples.find((sample) => closeTo(sample.y, 32, 0.01));
+  let levelGroundingPassed = false;
+  if (levelOne && levelTwo) {
+    api.switchBody('primaris');
+    api.teleport(levelOne.x, levelOne.y + 0.1, levelOne.z);
+    const one = api.step(0.1);
+    api.teleport(levelTwo.x, levelTwo.y + 0.1, levelTwo.z);
+    const two = api.step(0.1);
+    levelGroundingPassed =
+      one.state === 'GROUNDED' &&
+      closeTo(one.position[1], 16, 0.01) &&
+      two.state === 'GROUNDED' &&
+      closeTo(two.position[1], 32, 0.01);
+  }
+  results.push({
+    label: 'Level-1 and Level-2 grounding',
+    detail: `${levelOne?.label ?? 'missing'} / ${levelTwo?.label ?? 'missing'}`,
+    passed: levelGroundingPassed,
+  });
+
+  api.switchBody('guardsman');
+  api.reset();
+  api.step(FIXED_TIMESTEP);
+  api.teleport(GAME.board.worldUnits.width, 0, 0);
+  api.step(0.05);
+  api.jump();
+  const coyoteAccepted = api.snapshot().velocity[1] > 0;
+  api.reset();
+  api.step(FIXED_TIMESTEP);
+  api.teleport(GAME.board.worldUnits.width, 0, 0);
+  api.step(0.2);
+  api.jump();
+  const lateRejected = api.snapshot().velocity[1] < 0;
+  results.push({
+    label: 'Coyote window',
+    detail: `0.05s ${coyoteAccepted ? 'accepted' : 'rejected'} / 0.20s ${lateRejected ? 'rejected' : 'accepted'}`,
+    passed: coyoteAccepted && lateRejected,
+  });
+
+  const lineColliders = api.colliders().filter((collider) => collider.id.endsWith('-barricade'));
+  results.push({
+    label: 'Line terrain height',
+    detail: `${lineColliders.length} pieces at ${boardInchesToWorld(1).toFixed(4)} u`,
+    passed:
+      lineColliders.length === 6 &&
+      lineColliders.every((collider) =>
+        closeTo(collider.max[1] - collider.min[1], boardInchesToWorld(1), 0.001),
+      ),
+  });
+
+  api.switchBody('primaris');
+  api.reset();
+  api.clearInput();
+
+  const panel = document.createElement('section');
+  const passed = results.filter((result) => result.passed).length;
+  panel.id = 'self-test-report';
+  panel.className = 'self-test-report';
+  panel.dataset.status = passed === results.length ? 'passed' : 'failed';
+  panel.innerHTML = `
+    <p>Phase 3 collision acceptance</p>
     <h2>${passed}/${results.length} checks passed</h2>
     <ol>${results
       .map(

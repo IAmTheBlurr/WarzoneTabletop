@@ -162,6 +162,10 @@ kbd {
   opacity: 1;
 }
 
+.cinematic-preview .hud {
+  display: none;
+}
+
 .body-card,
 .status-card {
   position: absolute;

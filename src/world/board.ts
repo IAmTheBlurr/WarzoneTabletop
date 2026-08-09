@@ -1,23 +1,11 @@
 import * as THREE from 'three';
 import { GAME } from '../constants';
 import type { CollisionWorld, StaticCollider } from '../player/collision';
+import { PALETTE } from './palette';
 
 export interface BoardWorld extends CollisionWorld {
   readonly sceneRoot: THREE.Group;
 }
-
-const palette = {
-  matGreen: 0x4a5d3a,
-  matBurn: 0x6b5d4a,
-  tableWood: 0x5a4632,
-  roomFog: 0x1e1a20,
-  brass: 0xa78d5c,
-};
-
-export const PHASE_TWO_COURSE = {
-  lowBlock: { x: -14, z: -122, width: 8, depth: 8, height: 2 },
-  highBlock: { x: 14, z: -122, width: 8, depth: 8, height: 5 },
-} as const;
 
 function createBox(
   width: number,
@@ -48,7 +36,7 @@ function addRoomDressing(root: THREE.Group): void {
   root.add(roomFloor);
 
   const legMaterial = new THREE.MeshStandardMaterial({
-    color: palette.tableWood,
+    color: PALETTE.tableWood,
     roughness: 0.72,
   });
   const legPositions: Array<readonly [number, number]> = [
@@ -80,8 +68,8 @@ function addRoomDressing(root: THREE.Group): void {
 }
 
 export function createBoardWorld(scene: THREE.Scene): BoardWorld {
-  scene.background = new THREE.Color(palette.roomFog);
-  scene.fog = new THREE.Fog(palette.roomFog, 185, 720);
+  scene.background = new THREE.Color(PALETTE.roomFog);
+  scene.fog = new THREE.Fog(PALETTE.roomFog, 185, 720);
 
   const root = new THREE.Group();
   root.name = 'warzone-tabletop';
@@ -92,17 +80,11 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
   root.add(groundRaycastGroup);
   const collidables: StaticCollider[] = [];
 
-  const registerGroundCollider = (mesh: THREE.Mesh, id: string): void => {
-    groundRaycastGroup.add(mesh);
-    mesh.updateMatrixWorld(true);
-    collidables.push({ id, bounds: new THREE.Box3().setFromObject(mesh) });
-  };
-
   const mat = createBox(
     GAME.board.worldUnits.width,
     GAME.board.matThicknessWorldUnits,
     GAME.board.worldUnits.depth,
-    palette.matGreen,
+    PALETTE.matGreen,
     0.92,
   );
   mat.position.y = -GAME.board.matThicknessWorldUnits / 2;
@@ -114,7 +96,7 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
     GAME.board.worldUnits.width + apronWidth * 2,
     4,
     GAME.board.worldUnits.depth + apronWidth * 2,
-    palette.tableWood,
+    PALETTE.tableWood,
     0.68,
   );
   table.position.y = -2.35;
@@ -122,35 +104,11 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
   table.castShadow = true;
   groundRaycastGroup.add(table);
 
-  const courseMaterial = new THREE.MeshStandardMaterial({
-    color: 0x756d61,
-    roughness: 0.64,
-    metalness: 0.08,
-  });
-  for (const [id, block] of Object.entries(PHASE_TWO_COURSE)) {
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(block.width, block.height, block.depth),
-      courseMaterial,
-    );
-    mesh.position.set(block.x, block.height / 2, block.z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.name = `calibration-${id}`;
-    registerGroundCollider(mesh, mesh.name);
-
-    const edge = new THREE.LineSegments(
-      new THREE.EdgesGeometry(mesh.geometry),
-      new THREE.LineBasicMaterial({ color: palette.brass, transparent: true, opacity: 0.56 }),
-    );
-    edge.position.copy(mesh.position);
-    root.add(edge);
-  }
-
   const grid = new THREE.GridHelper(
     GAME.board.worldUnits.depth,
     30,
-    palette.brass,
-    palette.matBurn,
+    PALETTE.brass,
+    PALETTE.matBurn,
   );
   grid.position.y = 0.012;
   const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
@@ -168,7 +126,7 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
         GAME.board.worldUnits.depth,
       ),
     ),
-    new THREE.LineBasicMaterial({ color: palette.brass, transparent: true, opacity: 0.62 }),
+    new THREE.LineBasicMaterial({ color: PALETTE.brass, transparent: true, opacity: 0.62 }),
   );
   boardBorder.position.y = -GAME.board.matThicknessWorldUnits / 2;
   root.add(boardBorder);

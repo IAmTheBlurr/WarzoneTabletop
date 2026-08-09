@@ -3,8 +3,14 @@ import './styles.css';
 import { FIXED_TIMESTEP, GAME, MAX_FRAME_DT } from './constants';
 import { InputManager } from './player/input';
 import { PlayerController } from './player/controller';
-import { runPhaseOneSelfTest, runPhaseTwoSelfTest } from './testing/selftest';
+import {
+  runPhaseOneSelfTest,
+  runPhaseThreeSelfTest,
+  runPhaseTwoSelfTest,
+} from './testing/selftest';
 import { createBoardWorld } from './world/board';
+import { createFootprints } from './world/footprints';
+import { createTerrain } from './world/terrain';
 
 function requiredElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -40,9 +46,16 @@ renderer.toneMappingExposure = 1.05;
 app.append(renderer.domElement);
 
 const world = createBoardWorld(scene);
+const footprints = createFootprints(world.sceneRoot);
+const terrain = createTerrain(
+  world.sceneRoot,
+  world.groundRaycastGroup,
+  world.collidables,
+);
 const input = new InputManager(renderer.domElement);
 const controller = new PlayerController(camera, input, world);
 const searchParams = new URLSearchParams(window.location.search);
+const cornerPreview = searchParams.get('preview') === 'corner';
 
 let debugVisible = searchParams.has('debug');
 let accumulator = 0;
@@ -62,6 +75,7 @@ if (searchParams.has('preview')) {
   document.body.classList.add('is-playing');
   entry.classList.add('dismissed');
 }
+if (cornerPreview) document.body.classList.add('cinematic-preview');
 
 function setPointerLockUi(locked: boolean): void {
   document.body.classList.toggle('is-playing', locked);
@@ -124,7 +138,12 @@ function render(now: number): void {
     controller.update(FIXED_TIMESTEP);
     accumulator -= FIXED_TIMESTEP;
   }
-  controller.updateCamera();
+  if (cornerPreview) {
+    camera.position.set(-178, 152, -224);
+    camera.lookAt(0, 9, 0);
+  } else {
+    controller.updateCamera();
+  }
   updateBodyHud();
 
   frameCount += 1;
@@ -157,6 +176,19 @@ const testApi = {
   },
   jump: () => controller.pressJump(),
   switchBody: (body: keyof typeof GAME.bodies) => controller.switchBody(body),
+  colliders: () =>
+    world.collidables.map((collider) => ({
+      id: collider.id,
+      min: collider.bounds.min.toArray() as [number, number, number],
+      max: collider.bounds.max.toArray() as [number, number, number],
+    })),
+  terrainSamples: () => terrain.groundSamples.map((sample) => ({ ...sample })),
+  worldStats: () => ({
+    footprintPieces: footprints.userData.pieceCount as number,
+    colliders: world.collidables.length,
+    terrainMeshes: terrain.terrainMeshCount,
+    groundTargetNames: world.groundRaycastGroup.children.map((child) => child.name),
+  }),
   reset: () => controller.reset(),
 };
 
@@ -167,6 +199,9 @@ if (searchParams.get('selftest') === 'phase1') {
 }
 if (searchParams.get('selftest') === 'phase2') {
   runPhaseTwoSelfTest(testApi);
+}
+if (searchParams.get('selftest') === 'phase3') {
+  runPhaseThreeSelfTest(testApi);
 }
 updateBodyHud();
 requestAnimationFrame(render);
