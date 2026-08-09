@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import './styles.css';
+import { FootstepAudio } from './audio/footsteps';
 import { FIXED_TIMESTEP, GAME, MAX_FRAME_DT } from './constants';
 import { InputManager } from './player/input';
 import { PlayerController } from './player/controller';
@@ -59,6 +60,7 @@ const terrain = createTerrain(
 );
 const input = new InputManager(renderer.domElement);
 const controller = new PlayerController(camera, input, world);
+const footstepAudio = new FootstepAudio();
 const searchParams = new URLSearchParams(window.location.search);
 const cornerPreview = searchParams.get('preview') === 'corner';
 const DEBUG_ARC = searchParams.has('debugArc');
@@ -126,6 +128,27 @@ let frameCount = 0;
 let fpsSampleStarted = previousTime;
 let displayedFps = 60;
 let displayedBody = '';
+let observedLandingCount = controller.snapshot().landing.count;
+let cameraDip = 0;
+
+interface DustBurst {
+  readonly points: THREE.Points;
+  readonly velocities: Float32Array;
+  age: number;
+  readonly lifetime: number;
+}
+
+const dustBursts: DustBurst[] = [];
+const POLISH = {
+  normalLandingDip: 0.08,
+  packLandingDip: 0.32,
+  dipRecoveryRate: 9,
+  dustLifetime: 0.58,
+  dustPointCount: 18,
+  fovResponse: 7,
+  rumbleHeight: 0.018,
+  rumbleRoll: 0.0016,
+} as const;
 
 input.onDebugToggle(() => {
   debugVisible = !debugVisible;
@@ -149,9 +172,13 @@ function setPointerLockUi(locked: boolean): void {
   }
 }
 
-enterButton.addEventListener('click', () => input.requestPointerLock());
+enterButton.addEventListener('click', () => {
+  footstepAudio.unlock();
+  input.requestPointerLock();
+});
 renderer.domElement.addEventListener('click', () => {
   if (!input.isPointerLocked() && entry.classList.contains('dismissed')) {
+    footstepAudio.unlock();
     input.requestPointerLock();
   }
 });
@@ -246,6 +273,91 @@ function updateDebugArc(): void {
   previousControllerState = snapshot.state;
 }
 
+function spawnDust(position: readonly [number, number, number], impactSpeed: number): void {
+  const positions = new Float32Array(POLISH.dustPointCount * 3);
+  const velocities = new Float32Array(POLISH.dustPointCount * 3);
+  for (let index = 0; index < POLISH.dustPointCount; index += 1) {
+    const angle = (index / POLISH.dustPointCount) * Math.PI * 2;
+    const radius = 0.18 + (index % 3) * 0.09;
+    positions[index * 3] = position[0] + Math.cos(angle) * radius;
+    positions[index * 3 + 1] = position[1] + 0.08;
+    positions[index * 3 + 2] = position[2] + Math.sin(angle) * radius;
+    const speed = 1.4 + Math.min(impactSpeed, 12) * 0.1 + (index % 4) * 0.12;
+    velocities[index * 3] = Math.cos(angle) * speed;
+    velocities[index * 3 + 1] = 0.5 + (index % 3) * 0.16;
+    velocities[index * 3 + 2] = Math.sin(angle) * speed;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const material = new THREE.PointsMaterial({
+    color: 0xa79572,
+    size: 0.48,
+    transparent: true,
+    opacity: 0.58,
+    depthWrite: false,
+    sizeAttenuation: true,
+  });
+  const points = new THREE.Points(geometry, material);
+  points.name = 'landing-dust';
+  scene.add(points);
+  dustBursts.push({ points, velocities, age: 0, lifetime: POLISH.dustLifetime });
+}
+
+function updateDust(dt: number): void {
+  for (let index = dustBursts.length - 1; index >= 0; index -= 1) {
+    const burst = dustBursts[index];
+    if (!burst) continue;
+    burst.age += dt;
+    const attribute = burst.points.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const positions = attribute.array as Float32Array;
+    for (let point = 0; point < positions.length / 3; point += 1) {
+      positions[point * 3] = (positions[point * 3] ?? 0) + (burst.velocities[point * 3] ?? 0) * dt;
+      positions[point * 3 + 1] =
+        (positions[point * 3 + 1] ?? 0) +
+        ((burst.velocities[point * 3 + 1] ?? 0) - burst.age * 1.5) * dt;
+      positions[point * 3 + 2] =
+        (positions[point * 3 + 2] ?? 0) + (burst.velocities[point * 3 + 2] ?? 0) * dt;
+    }
+    attribute.needsUpdate = true;
+    const burstMaterial = burst.points.material as THREE.PointsMaterial;
+    burstMaterial.opacity = 0.58 * Math.max(1 - burst.age / burst.lifetime, 0);
+    if (burst.age < burst.lifetime) continue;
+    scene.remove(burst.points);
+    burst.points.geometry.dispose();
+    burstMaterial.dispose();
+    dustBursts.splice(index, 1);
+  }
+}
+
+function updatePresentation(dt: number, now: number): void {
+  const snapshot = controller.snapshot();
+  if (snapshot.landing.count !== observedLandingCount) {
+    observedLandingCount = snapshot.landing.count;
+    cameraDip = Math.max(
+      cameraDip,
+      snapshot.landing.wasPack ? POLISH.packLandingDip : POLISH.normalLandingDip,
+    );
+    spawnDust(snapshot.landing.position, snapshot.landing.impactSpeed);
+  }
+  cameraDip = THREE.MathUtils.damp(cameraDip, 0, POLISH.dipRecoveryRate, dt);
+  const packFlight =
+    snapshot.state === 'PACK_BALLISTIC' || snapshot.state === 'RETRO_BURN';
+  const targetFov =
+    GAME.camera.fovDegrees + (packFlight ? GAME.camera.packFlightFovKickDegrees : 0);
+  const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, POLISH.fovResponse, dt);
+  if (Math.abs(nextFov - camera.fov) > 0.001) {
+    camera.fov = nextFov;
+    camera.updateProjectionMatrix();
+  }
+  if (!cornerPreview) {
+    camera.position.y -= cameraDip;
+    camera.position.y += packFlight ? Math.sin(now * 0.028) * POLISH.rumbleHeight : 0;
+    camera.rotation.z = packFlight ? Math.sin(now * 0.034) * POLISH.rumbleRoll : 0;
+  }
+  footstepAudio.update(snapshot, input.isPointerLocked());
+  updateDust(dt);
+}
+
 function render(now: number): void {
   requestAnimationFrame(render);
   const frameDt = Math.min((now - previousTime) / 1000, MAX_FRAME_DT);
@@ -264,6 +376,7 @@ function render(now: number): void {
   }
   updateBodyHud();
   updateDebugArc();
+  updatePresentation(frameDt, now);
 
   frameCount += 1;
   if (now - fpsSampleStarted >= 500) {

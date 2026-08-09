@@ -1,9 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
 :root {
   color: #f0eadc;
   background: #171419;
-  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-family: "Bahnschrift Condensed", "Arial Narrow", sans-serif;
   font-synthesis: none;
   text-rendering: geometricPrecision;
 }

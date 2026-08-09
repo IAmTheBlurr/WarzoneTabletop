@@ -56,3 +56,14 @@ This spec pack is written to be consumed by an agentic coding session (Claude Co
 - **Footprint** — a flat printed template on the mat defining a terrain area (11th-edition rules concept).
 - **Level** — terrain storey. Level 1 floor sits 3 board inches (16 world units) above the mat; Level 2 at 6 board inches (32 world units).
 - **Retro-burn** — automatic downward-thrust braking phase of a jump-pack descent, triggered by proximity to the ground, not by a timer.
+
+## Running the implementation
+
+```bash
+npm install
+npm run dev
+```
+
+Open the local URL printed by Vite, click **Enter the battlefield**, and use mouse look with WASD. Hold Shift to sprint, tap Space for a normal jump, hold Space for 0.5 seconds as the Primaris to fire the jump pack, and press 1/2/3 to switch bodies. Press `~` for controller telemetry.
+
+The production build is `npm run build`. Measured phase results and checkpoint hashes are recorded in `ACCEPTANCE.md`; implementation judgments are isolated in `DECISIONS.md`.

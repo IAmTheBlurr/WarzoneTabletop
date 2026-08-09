@@ -48,7 +48,7 @@ export class InputManager {
   }
 
   requestPointerLock(): void {
-    void this.lockTarget.requestPointerLock();
+    void this.lockTarget.requestPointerLock().catch(() => undefined);
   }
 
   isPointerLocked(): boolean {

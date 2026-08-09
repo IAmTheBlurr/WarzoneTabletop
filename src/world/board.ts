@@ -104,6 +104,50 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
   table.castShadow = true;
   groundRaycastGroup.add(table);
 
+  const dieSize = 9;
+  const dieX = -GAME.board.worldUnits.width / 2 - 6.2;
+  const dieZ = -120;
+  const tableTop = -0.35;
+  const die = createBox(dieSize, dieSize, dieSize, PALETTE.templateTan, 0.48);
+  die.position.set(dieX, tableTop + dieSize / 2, dieZ);
+  die.name = 'off-board-scale-die';
+  die.castShadow = true;
+  groundRaycastGroup.add(die);
+  die.updateMatrixWorld(true);
+  collidables.push({ id: die.name, bounds: new THREE.Box3().setFromObject(die) });
+
+  const pipMaterial = new THREE.MeshStandardMaterial({
+    color: PALETTE.templateDark,
+    roughness: 0.5,
+  });
+  const pipGeometry = new THREE.SphereGeometry(0.56, 10, 6);
+  const topY = tableTop + dieSize - 0.1;
+  for (const [offsetX, offsetZ] of [
+    [-2.1, -2.1],
+    [0, 0],
+    [2.1, 2.1],
+  ] as const) {
+    const pip = new THREE.Mesh(pipGeometry, pipMaterial);
+    pip.position.set(dieX + offsetX, topY, dieZ + offsetZ);
+    pip.scale.y = 0.34;
+    root.add(pip);
+  }
+  for (const [offsetX, offsetY] of [
+    [-2.1, -2.1],
+    [2.1, -2.1],
+    [-2.1, 2.1],
+    [2.1, 2.1],
+  ] as const) {
+    const pip = new THREE.Mesh(pipGeometry, pipMaterial);
+    pip.position.set(
+      dieX + offsetX,
+      tableTop + dieSize / 2 + offsetY,
+      dieZ - dieSize / 2 + 0.1,
+    );
+    pip.scale.z = 0.34;
+    root.add(pip);
+  }
+
   const grid = new THREE.GridHelper(
     GAME.board.worldUnits.depth,
     30,

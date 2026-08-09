@@ -37,6 +37,12 @@ export interface ControllerSnapshot {
     readonly landingSurfaceY: number | null;
     readonly launchPosition: readonly [number, number, number] | null;
   };
+  readonly landing: {
+    readonly count: number;
+    readonly impactSpeed: number;
+    readonly wasPack: boolean;
+    readonly position: readonly [number, number, number];
+  };
 }
 
 function moveTowardsVector(
@@ -76,6 +82,10 @@ export class PlayerController {
   private packLandingSurfaceY: number | null = null;
   private packLaunchVerticalSpeed: number | null = null;
   private packRetroTimeScale = 1;
+  private landingCount = 0;
+  private lastLandingImpactSpeed = 0;
+  private lastLandingWasPack = false;
+  private lastLandingPosition: [number, number, number] = [0, 0, 0];
 
   constructor(
     private readonly camera: THREE.PerspectiveCamera,
@@ -218,14 +228,22 @@ export class PlayerController {
     if (acceptGroundSnap) {
       const landingY = retroTouchdownY ?? contact.hitY;
       if (landingY === null) throw new Error('Ground contact is missing a surface height.');
+      const wasAirborne = this.state !== 'GROUNDED';
+      const impactSpeed = Math.abs(this.velocity.y);
       if (packCommitted) {
-        this.packTouchdownSpeed = Math.abs(this.velocity.y);
+        this.packTouchdownSpeed = impactSpeed;
         this.packLandingSurfaceY = landingY;
         this.velocity.set(0, 0, 0);
       }
       this.pos.y = landingY;
       this.velocity.y = 0;
       this.state = 'GROUNDED';
+      if (wasAirborne) {
+        this.landingCount += 1;
+        this.lastLandingImpactSpeed = impactSpeed;
+        this.lastLandingWasPack = packCommitted;
+        this.lastLandingPosition = [this.pos.x, landingY, this.pos.z];
+      }
       this.packArmed = false;
       this.packHoldElapsed = 0;
       this.lastGroundedAt = this.simulationTime;
@@ -315,6 +333,12 @@ export class PlayerController {
               this.packLaunchPosition.z,
             ]
           : null,
+      },
+      landing: {
+        count: this.landingCount,
+        impactSpeed: this.lastLandingImpactSpeed,
+        wasPack: this.lastLandingWasPack,
+        position: this.lastLandingPosition,
       },
     };
   }

@@ -365,7 +365,7 @@ export function runPhaseThreeSelfTest(api: TestApi): void {
     detail: `${stats.footprintPieces} decals / ${stats.terrainMeshes} terrain meshes / ${stats.colliders} AABBs`,
     passed:
       stats.footprintPieces === 16 &&
-      stats.terrainMeshes === stats.colliders &&
+      stats.terrainMeshes <= stats.colliders &&
       stats.groundTargetNames.every((name) => !name.startsWith('footprint-')),
   });
 
