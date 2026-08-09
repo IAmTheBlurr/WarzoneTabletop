@@ -3,7 +3,7 @@ import './styles.css';
 import { FIXED_TIMESTEP, GAME, MAX_FRAME_DT } from './constants';
 import { InputManager } from './player/input';
 import { PlayerController } from './player/controller';
-import { runPhaseOneSelfTest } from './testing/selftest';
+import { runPhaseOneSelfTest, runPhaseTwoSelfTest } from './testing/selftest';
 import { createBoardWorld } from './world/board';
 
 function requiredElement<T extends Element>(selector: string): T {
@@ -18,6 +18,9 @@ const enterButton = requiredElement<HTMLButtonElement>('#enter-button');
 const pauseHint = requiredElement<HTMLElement>('#pause-hint');
 const debugPanel = requiredElement<HTMLElement>('#debug');
 const debugReadout = requiredElement<HTMLElement>('#debug-readout');
+const bodyIndex = requiredElement<HTMLElement>('#body-index');
+const bodyLabel = requiredElement<HTMLElement>('#body-label');
+const bodyDetail = requiredElement<HTMLElement>('#body-detail');
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
@@ -47,6 +50,7 @@ let previousTime = performance.now();
 let frameCount = 0;
 let fpsSampleStarted = previousTime;
 let displayedFps = 60;
+let displayedBody = '';
 
 input.onDebugToggle(() => {
   debugVisible = !debugVisible;
@@ -94,6 +98,22 @@ function updateDebug(): void {
   ].join('\n');
 }
 
+const bodyPresentation = {
+  guardsman: ['01', 'Nimble reconnaissance profile'],
+  sister: ['02', 'Armoured momentum profile'],
+  primaris: ['03', 'Heavy assault profile'],
+} as const;
+
+function updateBodyHud(): void {
+  const snapshot = controller.snapshot();
+  if (snapshot.body === displayedBody) return;
+  displayedBody = snapshot.body;
+  const [index, detail] = bodyPresentation[snapshot.body];
+  bodyIndex.textContent = `FIELD UNIT / ${index}`;
+  bodyLabel.textContent = GAME.bodies[snapshot.body].label;
+  bodyDetail.textContent = `${detail} · 1 / 2 / 3 to switch`;
+}
+
 function render(now: number): void {
   requestAnimationFrame(render);
   const frameDt = Math.min((now - previousTime) / 1000, MAX_FRAME_DT);
@@ -105,6 +125,7 @@ function render(now: number): void {
     accumulator -= FIXED_TIMESTEP;
   }
   controller.updateCamera();
+  updateBodyHud();
 
   frameCount += 1;
   if (now - fpsSampleStarted >= 500) {
@@ -135,6 +156,7 @@ const testApi = {
     return controller.snapshot();
   },
   jump: () => controller.pressJump(),
+  switchBody: (body: keyof typeof GAME.bodies) => controller.switchBody(body),
   reset: () => controller.reset(),
 };
 
@@ -143,6 +165,10 @@ controller.updateCamera();
 if (searchParams.get('selftest') === 'phase1') {
   runPhaseOneSelfTest(testApi);
 }
+if (searchParams.get('selftest') === 'phase2') {
+  runPhaseTwoSelfTest(testApi);
+}
+updateBodyHud();
 requestAnimationFrame(render);
 
 declare global {

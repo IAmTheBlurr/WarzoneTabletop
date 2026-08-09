@@ -10,6 +10,7 @@ import {
   centerGroundDistance,
   detectGround,
   moveAndResolveHorizontal,
+  resolveCurrentPosition,
   type CollisionWorld,
 } from './collision';
 
@@ -22,6 +23,7 @@ export interface ControllerSnapshot {
   readonly yawDegrees: number;
   readonly pitchDegrees: number;
   readonly respawnCount: number;
+  readonly eyeHeight: number;
 }
 
 function moveTowardsVector(
@@ -42,11 +44,14 @@ export class PlayerController {
   yaw = 0;
   pitch = 0;
 
-  private bodyId: BodyId = 'guardsman';
+  private bodyId = GAME.spawn.defaultBody as BodyId;
   private groundDistance = 0;
   private lastGroundedAt = 0;
   private simulationTime = 0;
   private respawnCount = 0;
+  private currentEyeHeight = GAME.bodies.primaris.eyeHeightUnits;
+  private eyeTransitionFrom = GAME.bodies.primaris.eyeHeightUnits;
+  private eyeTransitionElapsed = GAME.camera.eyeHeightLerpSeconds;
 
   constructor(
     private readonly camera: THREE.PerspectiveCamera,
@@ -55,6 +60,14 @@ export class PlayerController {
   ) {
     input.onJump(() => this.tryNormalJump());
     input.onLook((movementX, movementY) => this.look(movementX, movementY));
+    input.onBodySwitch((hotkey) => {
+      const body = (Object.entries(GAME.bodies) as Array<[BodyId, BodyProfile]>).find(
+        ([, profile]) => profile.hotkey === hotkey,
+      );
+      if (body) this.switchBody(body[0]);
+    });
+    this.currentEyeHeight = this.body.eyeHeightUnits;
+    this.eyeTransitionFrom = this.currentEyeHeight;
     this.respawn();
   }
 
@@ -64,6 +77,7 @@ export class PlayerController {
 
   update(dt: number): void {
     this.simulationTime += dt;
+    this.updateEyeHeight(dt);
     const input = this.input.snapshot();
     const forwardAmount = Number(input.forward) - Number(input.back);
     const rightAmount = Number(input.right) - Number(input.left);
@@ -111,7 +125,7 @@ export class PlayerController {
   updateCamera(): void {
     this.camera.position.set(
       this.pos.x,
-      this.pos.y + this.body.eyeHeightUnits,
+      this.pos.y + this.currentEyeHeight,
       this.pos.z,
     );
     this.camera.rotation.set(this.pitch, this.yaw + Math.PI, 0, 'YXZ');
@@ -132,6 +146,15 @@ export class PlayerController {
     this.tryNormalJump();
   }
 
+  switchBody(bodyId: BodyId): void {
+    if (bodyId === this.bodyId) return;
+    this.eyeTransitionFrom = this.currentEyeHeight;
+    this.eyeTransitionElapsed = 0;
+    this.bodyId = bodyId;
+    resolveCurrentPosition(this.pos, this.body, this.world.collidables);
+    this.groundDistance = centerGroundDistance(this.pos, this.world);
+  }
+
   snapshot(): ControllerSnapshot {
     const finiteGroundDistance = Number.isFinite(this.groundDistance)
       ? this.groundDistance
@@ -145,7 +168,19 @@ export class PlayerController {
       yawDegrees: THREE.MathUtils.radToDeg(this.yaw),
       pitchDegrees: THREE.MathUtils.radToDeg(this.pitch),
       respawnCount: this.respawnCount,
+      eyeHeight: this.currentEyeHeight,
     };
+  }
+
+  private updateEyeHeight(dt: number): void {
+    const duration = GAME.camera.eyeHeightLerpSeconds;
+    this.eyeTransitionElapsed = Math.min(this.eyeTransitionElapsed + dt, duration);
+    const alpha = duration > 0 ? this.eyeTransitionElapsed / duration : 1;
+    this.currentEyeHeight = THREE.MathUtils.lerp(
+      this.eyeTransitionFrom,
+      this.body.eyeHeightUnits,
+      alpha,
+    );
   }
 
   private tryNormalJump(): void {

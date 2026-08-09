@@ -8,6 +8,7 @@ export interface InputSnapshot {
 
 type JumpHandler = () => void;
 type LookHandler = (movementX: number, movementY: number) => void;
+type BodySwitchHandler = (hotkey: '1' | '2' | '3') => void;
 
 export class InputManager {
   private readonly held = new Set<string>();
@@ -15,6 +16,7 @@ export class InputManager {
   private jumpHandler: JumpHandler = () => undefined;
   private lookHandler: LookHandler = () => undefined;
   private debugHandler: () => void = () => undefined;
+  private bodySwitchHandler: BodySwitchHandler = () => undefined;
 
   constructor(private readonly lockTarget: HTMLElement) {
     window.addEventListener('keydown', this.onKeyDown);
@@ -33,6 +35,10 @@ export class InputManager {
 
   onDebugToggle(handler: () => void): void {
     this.debugHandler = handler;
+  }
+
+  onBodySwitch(handler: BodySwitchHandler): void {
+    this.bodySwitchHandler = handler;
   }
 
   requestPointerLock(): void {
@@ -72,6 +78,10 @@ export class InputManager {
     if (!this.isPointerLocked() && !event.isTrusted) return;
     this.held.add(event.code);
 
+    if (!event.repeat && /^Digit[123]$/.test(event.code)) {
+      this.bodySwitchHandler(event.code.slice(-1) as '1' | '2' | '3');
+    }
+
     if (event.code === 'Space') {
       event.preventDefault();
       if (!event.repeat) this.jumpHandler();
@@ -91,4 +101,3 @@ export class InputManager {
     this.held.clear();
   };
 }
-

@@ -13,3 +13,6 @@ This file records judgment calls and interpretations. Numeric gameplay values st
 - **Triangle photo unavailable.** The supplied attachment directory contains the kickoff prompt only. Until the reference image is supplied, the large polygon uses the documented four-sided approximation with a 0.25-board-inch outward quadratic bow on the long diagonal. This will remain isolated in `src/world/footprints.ts` for later refinement.
 - **Terrain massing.** Generic gothic-industrial forms will use floor tops at exactly 16 and 32 world units, line terrain at 5.3333 units, and 0.8-unit slabs. Decorative silhouettes may extend above those walkable heights, but collision floors will not.
 
+## Collision acceptance interpretation
+
+- `06-implementation-roadmap.md` says the Guardsman cannot jump a 2-unit block. Under the authoritative `07 §7.3` moving wall-band rule, however, a collider stops blocking once its top is below `feet + stepHeight`; while airborne, that gives the Guardsman an effective obstacle-crossing envelope of roughly `1.5 jump + 0.9 step = 2.4` units. The implementation follows `07` as required. Phase 2 therefore measures the three exact free-jump apices and supplies 2- and 5-unit calibration blocks visually, but does not alter wall collision to manufacture the older 2-unit expectation.

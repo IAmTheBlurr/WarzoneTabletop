@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GAME } from '../constants';
-import type { CollisionWorld } from '../player/collision';
+import type { CollisionWorld, StaticCollider } from '../player/collision';
 
 export interface BoardWorld extends CollisionWorld {
   readonly sceneRoot: THREE.Group;
@@ -13,6 +13,11 @@ const palette = {
   roomFog: 0x1e1a20,
   brass: 0xa78d5c,
 };
+
+export const PHASE_TWO_COURSE = {
+  lowBlock: { x: -14, z: -122, width: 8, depth: 8, height: 2 },
+  highBlock: { x: 14, z: -122, width: 8, depth: 8, height: 5 },
+} as const;
 
 function createBox(
   width: number,
@@ -85,6 +90,13 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
   const groundRaycastGroup = new THREE.Group();
   groundRaycastGroup.name = 'ground-raycast-group';
   root.add(groundRaycastGroup);
+  const collidables: StaticCollider[] = [];
+
+  const registerGroundCollider = (mesh: THREE.Mesh, id: string): void => {
+    groundRaycastGroup.add(mesh);
+    mesh.updateMatrixWorld(true);
+    collidables.push({ id, bounds: new THREE.Box3().setFromObject(mesh) });
+  };
 
   const mat = createBox(
     GAME.board.worldUnits.width,
@@ -109,6 +121,30 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
   table.name = 'table-apron';
   table.castShadow = true;
   groundRaycastGroup.add(table);
+
+  const courseMaterial = new THREE.MeshStandardMaterial({
+    color: 0x756d61,
+    roughness: 0.64,
+    metalness: 0.08,
+  });
+  for (const [id, block] of Object.entries(PHASE_TWO_COURSE)) {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(block.width, block.height, block.depth),
+      courseMaterial,
+    );
+    mesh.position.set(block.x, block.height / 2, block.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.name = `calibration-${id}`;
+    registerGroundCollider(mesh, mesh.name);
+
+    const edge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(mesh.geometry),
+      new THREE.LineBasicMaterial({ color: palette.brass, transparent: true, opacity: 0.56 }),
+    );
+    edge.position.copy(mesh.position);
+    root.add(edge);
+  }
 
   const grid = new THREE.GridHelper(
     GAME.board.worldUnits.depth,
@@ -166,7 +202,7 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
 
   return {
     sceneRoot: root,
-    collidables: [],
+    collidables,
     groundRaycastGroup,
   };
 }
