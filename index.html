@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#171419" />
+    <meta
+      name="description"
+      content="Explore a painted miniature battlefield from the eye height of the model you embody."
+    />
+    <title>Warzone Tabletop</title>
+  </head>
+  <body>
+    <div id="app" aria-label="Warzone Tabletop game viewport"></div>
+
+    <main id="entry" class="entry-panel">
+      <p class="eyebrow">A miniature-scale field exercise</p>
+      <h1>Warzone<br /><span>Tabletop</span></h1>
+      <p class="brief">
+        The battlefield is painted. The war is measured in inches.<br />
+        You are eight feet tall—and still only a miniature.
+      </p>
+      <button id="enter-button" type="button">
+        <span>Enter the battlefield</span>
+        <kbd>Click</kbd>
+      </button>
+      <div class="entry-controls" aria-label="Controls">
+        <span><kbd>W A S D</kbd> Move</span>
+        <span><kbd>Shift</kbd> Sprint</span>
+        <span><kbd>Space</kbd> Jump</span>
+        <span><kbd>Mouse</kbd> Look</span>
+      </div>
+    </main>
+
+    <div id="hud" class="hud" aria-live="polite">
+      <section class="body-card">
+        <span class="body-index">FIELD UNIT / 01</span>
+        <strong id="body-label">Guardsman</strong>
+        <span id="body-detail">Nimble reconnaissance profile</span>
+      </section>
+      <div class="crosshair" aria-hidden="true"></div>
+      <section class="status-card">
+        <span>Deployment</span>
+        <strong>Table edge / south</strong>
+        <small>Press <kbd>~</kbd> for telemetry</small>
+      </section>
+    </div>
+
+    <aside id="debug" class="debug-panel" hidden>
+      <div class="debug-title"><span>Controller telemetry</span><b>60 HZ</b></div>
+      <pre id="debug-readout"></pre>
+    </aside>
+
+    <div id="pause-hint" class="pause-hint" hidden>Click to resume field control</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
