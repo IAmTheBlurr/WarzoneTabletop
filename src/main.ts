@@ -3,8 +3,10 @@ import './styles.css';
 import { FIXED_TIMESTEP, GAME, MAX_FRAME_DT } from './constants';
 import { InputManager } from './player/input';
 import { PlayerController } from './player/controller';
+import { createPackLaunchVelocity } from './player/jumppack';
 import {
   runPhaseOneSelfTest,
+  runPhaseFourSelfTest,
   runPhaseThreeSelfTest,
   runPhaseTwoSelfTest,
 } from './testing/selftest';
@@ -27,6 +29,9 @@ const debugReadout = requiredElement<HTMLElement>('#debug-readout');
 const bodyIndex = requiredElement<HTMLElement>('#body-index');
 const bodyLabel = requiredElement<HTMLElement>('#body-label');
 const bodyDetail = requiredElement<HTMLElement>('#body-detail');
+const packMeter = requiredElement<HTMLElement>('#pack-meter');
+const packFill = requiredElement<HTMLElement>('#pack-fill');
+const packReadout = requiredElement<HTMLElement>('#pack-readout');
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
@@ -56,6 +61,63 @@ const input = new InputManager(renderer.domElement);
 const controller = new PlayerController(camera, input, world);
 const searchParams = new URLSearchParams(window.location.search);
 const cornerPreview = searchParams.get('preview') === 'corner';
+const DEBUG_ARC = searchParams.has('debugArc');
+let debugArcLine: THREE.Line | null = null;
+let previousControllerState = controller.state;
+let testArenaColliderIds: string[] = [];
+let testArenaMeshes: THREE.Mesh[] = [];
+
+function clearPackTestArena(): void {
+  for (const mesh of testArenaMeshes) {
+    world.groundRaycastGroup.remove(mesh);
+    mesh.geometry.dispose();
+    const meshMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const meshMaterial of meshMaterials) meshMaterial.dispose();
+  }
+  for (let index = world.collidables.length - 1; index >= 0; index -= 1) {
+    if (testArenaColliderIds.includes(world.collidables[index]?.id ?? '')) {
+      world.collidables.splice(index, 1);
+    }
+  }
+  testArenaColliderIds = [];
+  testArenaMeshes = [];
+}
+
+function installPackTestArena(height: number, includeWall: boolean) {
+  clearPackTestArena();
+  const addTestBox = (
+    id: string,
+    size: THREE.Vector3,
+    position: THREE.Vector3,
+  ): void => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(size.x, size.y, size.z),
+      new THREE.MeshBasicMaterial({ color: 0x221f22 }),
+    );
+    mesh.position.copy(position);
+    mesh.name = id;
+    world.groundRaycastGroup.add(mesh);
+    mesh.updateMatrixWorld(true);
+    world.collidables.push({ id, bounds: new THREE.Box3().setFromObject(mesh) });
+    testArenaColliderIds.push(id);
+    testArenaMeshes.push(mesh);
+  };
+
+  const slab = GAME.terrainLevels.slabThicknessWorldUnits;
+  addTestBox(
+    '__test-pack-deck',
+    new THREE.Vector3(24, slab, 112),
+    new THREE.Vector3(300, height - slab / 2, 8),
+  );
+  if (includeWall) {
+    addTestBox(
+      '__test-pack-wall',
+      new THREE.Vector3(24, 40, 1),
+      new THREE.Vector3(300, height + 20, -10),
+    );
+  }
+  return { x: 300, y: height, z: -32 };
+}
 
 let debugVisible = searchParams.has('debug');
 let accumulator = 0;
@@ -109,6 +171,11 @@ function updateDebug(): void {
     `GROUND  ${distance}`,
     `VIEW    ${format(snapshot.yawDegrees)}°  ${format(snapshot.pitchDegrees)}°`,
     `FPS     ${String(displayedFps).padStart(8, ' ')}`,
+    `PACK    ${snapshot.pack.charge.toFixed(2).padStart(8, ' ')}  ${
+      snapshot.pack.horizontalDistance === null
+        ? 'NO FLIGHT'
+        : `${snapshot.pack.horizontalDistance.toFixed(2)}u / ${(snapshot.pack.flightTime ?? 0).toFixed(2)}s`
+    }`,
   ].join('\n');
 }
 
@@ -120,12 +187,63 @@ const bodyPresentation = {
 
 function updateBodyHud(): void {
   const snapshot = controller.snapshot();
-  if (snapshot.body === displayedBody) return;
-  displayedBody = snapshot.body;
-  const [index, detail] = bodyPresentation[snapshot.body];
-  bodyIndex.textContent = `FIELD UNIT / ${index}`;
-  bodyLabel.textContent = GAME.bodies[snapshot.body].label;
-  bodyDetail.textContent = `${detail} · 1 / 2 / 3 to switch`;
+  if (snapshot.body !== displayedBody) {
+    displayedBody = snapshot.body;
+    const [index, detail] = bodyPresentation[snapshot.body];
+    bodyIndex.textContent = `FIELD UNIT / ${index}`;
+    bodyLabel.textContent = GAME.bodies[snapshot.body].label;
+    bodyDetail.textContent = `${detail} · 1 / 2 / 3 to switch`;
+  }
+  const hasPack = GAME.bodies[snapshot.body].hasJumpPack;
+  packMeter.classList.toggle('available', hasPack);
+  packFill.style.transform = `scaleX(${snapshot.pack.charge})`;
+  packReadout.textContent =
+    snapshot.state === 'PACK_BALLISTIC'
+      ? 'Ballistic commitment'
+      : snapshot.state === 'RETRO_BURN'
+        ? 'Retro-burn'
+        : snapshot.pack.armed
+          ? `Charging ${Math.round(snapshot.pack.charge * 100)}%`
+          : 'Pack ready · hold Space';
+}
+
+function updateDebugArc(): void {
+  const snapshot = controller.snapshot();
+  if (
+    !DEBUG_ARC ||
+    snapshot.state !== 'PACK_BALLISTIC' ||
+    previousControllerState === 'PACK_BALLISTIC' ||
+    !snapshot.pack.launchPosition
+  ) {
+    previousControllerState = snapshot.state;
+    return;
+  }
+
+  if (debugArcLine) {
+    scene.remove(debugArcLine);
+    debugArcLine.geometry.dispose();
+  }
+  const launch = new THREE.Vector3(...snapshot.pack.launchPosition);
+  const velocity = createPackLaunchVelocity(THREE.MathUtils.degToRad(snapshot.yawDegrees));
+  const points: THREE.Vector3[] = [];
+  const segments = GAME.physics.fixedTimestepHz * GAME.jumpPack.airtimeSeconds;
+  for (let index = 0; index <= segments; index += 1) {
+    const time = (index / segments) * GAME.jumpPack.airtimeSeconds;
+    points.push(
+      new THREE.Vector3(
+        launch.x + velocity.x * time,
+        launch.y + velocity.y * time - 0.5 * GAME.physics.gravity * time * time,
+        launch.z + velocity.z * time,
+      ),
+    );
+  }
+  debugArcLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(points),
+    new THREE.LineBasicMaterial({ color: 0xe2b36e, transparent: true, opacity: 0.86 }),
+  );
+  debugArcLine.name = 'debug-predicted-pack-arc';
+  scene.add(debugArcLine);
+  previousControllerState = snapshot.state;
 }
 
 function render(now: number): void {
@@ -145,6 +263,7 @@ function render(now: number): void {
     controller.updateCamera();
   }
   updateBodyHud();
+  updateDebugArc();
 
   frameCount += 1;
   if (now - fpsSampleStarted >= 500) {
@@ -175,6 +294,15 @@ const testApi = {
     return controller.snapshot();
   },
   jump: () => controller.pressJump(),
+  releaseJump: () => controller.releaseJump(),
+  packPress: () => {
+    input.setVirtual('Space', true);
+    controller.pressJump();
+  },
+  packRelease: () => {
+    input.setVirtual('Space', false);
+    controller.releaseJump();
+  },
   switchBody: (body: keyof typeof GAME.bodies) => controller.switchBody(body),
   colliders: () =>
     world.collidables.map((collider) => ({
@@ -189,6 +317,8 @@ const testApi = {
     terrainMeshes: terrain.terrainMeshCount,
     groundTargetNames: world.groundRaycastGroup.children.map((child) => child.name),
   }),
+  installPackTestArena,
+  clearPackTestArena,
   reset: () => controller.reset(),
 };
 
@@ -202,6 +332,9 @@ if (searchParams.get('selftest') === 'phase2') {
 }
 if (searchParams.get('selftest') === 'phase3') {
   runPhaseThreeSelfTest(testApi);
+}
+if (searchParams.get('selftest') === 'phase4') {
+  runPhaseFourSelfTest(testApi);
 }
 updateBodyHud();
 requestAnimationFrame(render);

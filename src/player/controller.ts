@@ -6,6 +6,7 @@ import {
   type ControllerState,
 } from '../constants';
 import type { InputManager } from './input';
+import { createPackLaunchVelocity, integrateRetroBurnVelocity } from './jumppack';
 import {
   centerGroundDistance,
   detectGround,
@@ -24,6 +25,18 @@ export interface ControllerSnapshot {
   readonly pitchDegrees: number;
   readonly respawnCount: number;
   readonly eyeHeight: number;
+  readonly pack: {
+    readonly armed: boolean;
+    readonly charge: number;
+    readonly launchVerticalSpeed: number | null;
+    readonly flightTime: number | null;
+    readonly horizontalDistance: number | null;
+    readonly peakHeight: number | null;
+    readonly touchdownSpeed: number | null;
+    readonly burnActivationDistance: number | null;
+    readonly landingSurfaceY: number | null;
+    readonly launchPosition: readonly [number, number, number] | null;
+  };
 }
 
 function moveTowardsVector(
@@ -52,13 +65,25 @@ export class PlayerController {
   private currentEyeHeight = GAME.bodies.primaris.eyeHeightUnits;
   private eyeTransitionFrom = GAME.bodies.primaris.eyeHeightUnits;
   private eyeTransitionElapsed = GAME.camera.eyeHeightLerpSeconds;
+  private packArmed = false;
+  private packHoldElapsed = 0;
+  private packLaunchPosition: THREE.Vector3 | null = null;
+  private packFlightTime: number | null = null;
+  private packHorizontalDistance: number | null = null;
+  private packPeakHeight: number | null = null;
+  private packTouchdownSpeed: number | null = null;
+  private packBurnActivationDistance: number | null = null;
+  private packLandingSurfaceY: number | null = null;
+  private packLaunchVerticalSpeed: number | null = null;
+  private packRetroTimeScale = 1;
 
   constructor(
     private readonly camera: THREE.PerspectiveCamera,
     private readonly input: InputManager,
     private readonly world: CollisionWorld,
   ) {
-    input.onJump(() => this.tryNormalJump());
+    input.onJump(() => this.handleJumpDown());
+    input.onJumpRelease(() => this.handleJumpRelease());
     input.onLook((movementX, movementY) => this.look(movementX, movementY));
     input.onBodySwitch((hotkey) => {
       const body = (Object.entries(GAME.bodies) as Array<[BodyId, BodyProfile]>).find(
@@ -79,6 +104,7 @@ export class PlayerController {
     this.simulationTime += dt;
     this.updateEyeHeight(dt);
     const input = this.input.snapshot();
+    this.updatePackArming(dt, input.jumpHeld);
     const forwardAmount = Number(input.forward) - Number(input.back);
     const rightAmount = Number(input.right) - Number(input.left);
 
@@ -87,32 +113,121 @@ export class PlayerController {
     const wish = forward.multiplyScalar(forwardAmount).addScaledVector(right, rightAmount);
     if (wish.lengthSq() > 1) wish.normalize();
 
-    const targetSpeed = input.sprint ? this.body.sprintSpeed : this.body.walkSpeed;
-    const target = wish.multiplyScalar(targetSpeed);
-    const horizontal = new THREE.Vector2(this.velocity.x, this.velocity.z);
-    const accelerating = target.lengthSq() > horizontal.lengthSq();
-    let rate = accelerating ? this.body.accelUnitsPerSec2 : this.body.decelUnitsPerSec2;
-    if (this.state === 'AIRBORNE') rate *= this.body.airControlMultiplier;
-    const nextHorizontal = moveTowardsVector(horizontal, target, rate * dt);
-    this.velocity.x = nextHorizontal.x;
-    this.velocity.z = nextHorizontal.y;
+    const packCommitted =
+      this.state === 'PACK_BALLISTIC' || this.state === 'RETRO_BURN';
+    if (!packCommitted) {
+      const targetSpeed = input.sprint ? this.body.sprintSpeed : this.body.walkSpeed;
+      const target = wish.multiplyScalar(targetSpeed);
+      const horizontal = new THREE.Vector2(this.velocity.x, this.velocity.z);
+      const accelerating = target.lengthSq() > horizontal.lengthSq();
+      let rate = accelerating ? this.body.accelUnitsPerSec2 : this.body.decelUnitsPerSec2;
+      if (this.state === 'AIRBORNE') rate *= this.body.airControlMultiplier;
+      const nextHorizontal = moveTowardsVector(horizontal, target, rate * dt);
+      this.velocity.x = nextHorizontal.x;
+      this.velocity.z = nextHorizontal.y;
+    }
 
-    if (this.state !== 'GROUNDED') this.velocity.y -= GAME.physics.gravity * dt;
+    const preStepGroundDistance = centerGroundDistance(this.pos, this.world);
+    if (this.state === 'RETRO_BURN' && !Number.isFinite(preStepGroundDistance)) {
+      this.state = 'PACK_BALLISTIC';
+      this.packRetroTimeScale = 1;
+    }
+    if (
+      this.state === 'PACK_BALLISTIC' &&
+      this.velocity.y < 0 &&
+      preStepGroundDistance <= GAME.jumpPack.retroBurn.activationHeightUnits
+    ) {
+      this.state = 'RETRO_BURN';
+      this.packBurnActivationDistance = preStepGroundDistance;
+      const downwardSpeed = -this.velocity.y;
+      const internalBurnTime =
+        (2 * preStepGroundDistance) /
+        (downwardSpeed + GAME.jumpPack.retroBurn.targetLandingSpeedUnitsPerSec);
+      const desiredRealTime = Math.max(
+        dt,
+        GAME.jumpPack.airtimeSeconds - (this.packFlightTime ?? 0),
+      );
+      this.packRetroTimeScale = Math.max(1, internalBurnTime / desiredRealTime);
+    }
 
-    moveAndResolveHorizontal(
+    if (this.state !== 'RETRO_BURN' && this.state !== 'GROUNDED') {
+      this.velocity.y -= GAME.physics.gravity * dt;
+    }
+
+    const horizontalCollision = moveAndResolveHorizontal(
       this.pos,
       this.velocity,
       dt,
       this.body,
       this.world.collidables,
     );
-    this.pos.y += this.velocity.y * dt;
+    if (
+      packCommitted &&
+      (horizontalCollision.hitX || horizontalCollision.hitZ)
+    ) {
+      this.velocity.x = 0;
+      this.velocity.z = 0;
+    }
+    let retroTouchdownY: number | null = null;
+    if (this.state === 'RETRO_BURN') {
+      let internalTimeRemaining = dt * this.packRetroTimeScale;
+      while (internalTimeRemaining > 0) {
+        const substep = Math.min(dt, internalTimeRemaining);
+        const distance = centerGroundDistance(this.pos, this.world);
+        this.velocity.y = integrateRetroBurnVelocity(
+          this.velocity.y,
+          distance,
+          substep,
+        );
+        const downwardMove = Math.max(-this.velocity.y * substep, 0);
+        if (
+          Number.isFinite(distance) &&
+          this.velocity.y <= 0 &&
+          downwardMove >= Math.max(distance - GAME.collision.contactEpsilonUnits, 0)
+        ) {
+          retroTouchdownY =
+            this.pos.y + GAME.collision.contactEpsilonUnits * 0.02 - distance;
+          this.pos.y = retroTouchdownY;
+          break;
+        }
+        this.pos.y += this.velocity.y * substep;
+        internalTimeRemaining -= substep;
+      }
+    } else {
+      this.pos.y += this.velocity.y * dt;
+    }
+
+    if (packCommitted && this.packLaunchPosition) {
+      this.packFlightTime = (this.packFlightTime ?? 0) + dt;
+      this.packHorizontalDistance = Math.hypot(
+        this.pos.x - this.packLaunchPosition.x,
+        this.pos.z - this.packLaunchPosition.z,
+      );
+      this.packPeakHeight = Math.max(
+        this.packPeakHeight ?? 0,
+        this.pos.y - this.packLaunchPosition.y,
+      );
+    }
 
     const contact = detectGround(this.pos, this.velocity.y, this.body, this.world);
-    if (contact.grounded && contact.hitY !== null) {
-      this.pos.y = contact.hitY;
+    const acceptGroundSnap =
+      retroTouchdownY !== null ||
+      (contact.grounded &&
+        contact.hitY !== null &&
+        this.state !== 'RETRO_BURN');
+    if (acceptGroundSnap) {
+      const landingY = retroTouchdownY ?? contact.hitY;
+      if (landingY === null) throw new Error('Ground contact is missing a surface height.');
+      if (packCommitted) {
+        this.packTouchdownSpeed = Math.abs(this.velocity.y);
+        this.packLandingSurfaceY = landingY;
+        this.velocity.set(0, 0, 0);
+      }
+      this.pos.y = landingY;
       this.velocity.y = 0;
       this.state = 'GROUNDED';
+      this.packArmed = false;
+      this.packHoldElapsed = 0;
       this.lastGroundedAt = this.simulationTime;
     } else if (this.state === 'GROUNDED') {
       this.state = 'AIRBORNE';
@@ -143,7 +258,11 @@ export class PlayerController {
   }
 
   pressJump(): void {
-    this.tryNormalJump();
+    this.handleJumpDown();
+  }
+
+  releaseJump(): void {
+    this.handleJumpRelease();
   }
 
   switchBody(bodyId: BodyId): void {
@@ -151,6 +270,10 @@ export class PlayerController {
     this.eyeTransitionFrom = this.currentEyeHeight;
     this.eyeTransitionElapsed = 0;
     this.bodyId = bodyId;
+    if (!this.body.hasJumpPack && this.packArmed) {
+      this.packArmed = false;
+      this.packHoldElapsed = 0;
+    }
     resolveCurrentPosition(this.pos, this.body, this.world.collidables);
     this.groundDistance = centerGroundDistance(this.pos, this.world);
   }
@@ -169,7 +292,74 @@ export class PlayerController {
       pitchDegrees: THREE.MathUtils.radToDeg(this.pitch),
       respawnCount: this.respawnCount,
       eyeHeight: this.currentEyeHeight,
+      pack: {
+        armed: this.packArmed,
+        charge: this.packArmed
+          ? THREE.MathUtils.clamp(
+              this.packHoldElapsed / GAME.jumpPack.holdThresholdSeconds,
+              0,
+              1,
+            )
+          : 0,
+        launchVerticalSpeed: this.packLaunchVerticalSpeed,
+        flightTime: this.packFlightTime,
+        horizontalDistance: this.packHorizontalDistance,
+        peakHeight: this.packPeakHeight,
+        touchdownSpeed: this.packTouchdownSpeed,
+        burnActivationDistance: this.packBurnActivationDistance,
+        landingSurfaceY: this.packLandingSurfaceY,
+        launchPosition: this.packLaunchPosition
+          ? [
+              this.packLaunchPosition.x,
+              this.packLaunchPosition.y,
+              this.packLaunchPosition.z,
+            ]
+          : null,
+      },
     };
+  }
+
+  private handleJumpDown(): void {
+    const strictlyGrounded = this.state === 'GROUNDED';
+    this.tryNormalJump();
+    if (strictlyGrounded && this.body.hasJumpPack) {
+      this.packArmed = true;
+      this.packHoldElapsed = 0;
+    }
+  }
+
+  private handleJumpRelease(): void {
+    if (this.state === 'PACK_BALLISTIC' || this.state === 'RETRO_BURN') return;
+    this.packArmed = false;
+    this.packHoldElapsed = 0;
+  }
+
+  private updatePackArming(dt: number, jumpHeld: boolean): void {
+    if (!this.packArmed) return;
+    if (!jumpHeld) {
+      this.handleJumpRelease();
+      return;
+    }
+    this.packHoldElapsed += dt;
+    if (this.packHoldElapsed + Number.EPSILON < GAME.jumpPack.holdThresholdSeconds) return;
+    this.launchPack();
+  }
+
+  private launchPack(): void {
+    const launchVelocity = createPackLaunchVelocity(this.yaw);
+    this.velocity.copy(launchVelocity);
+    this.state = 'PACK_BALLISTIC';
+    this.packArmed = false;
+    this.packHoldElapsed = GAME.jumpPack.holdThresholdSeconds;
+    this.packLaunchPosition = this.pos.clone();
+    this.packFlightTime = 0;
+    this.packHorizontalDistance = 0;
+    this.packPeakHeight = 0;
+    this.packTouchdownSpeed = null;
+    this.packBurnActivationDistance = null;
+    this.packLandingSurfaceY = null;
+    this.packLaunchVerticalSpeed = launchVelocity.y;
+    this.packRetroTimeScale = 1;
   }
 
   private updateEyeHeight(dt: number): void {
@@ -214,6 +404,9 @@ export class PlayerController {
     this.pitch = 0;
     this.lastGroundedAt = this.simulationTime;
     this.groundDistance = 0;
+    this.packArmed = false;
+    this.packHoldElapsed = 0;
+    this.packRetroTimeScale = 1;
     this.respawnCount += 1;
     this.updateCamera();
   }

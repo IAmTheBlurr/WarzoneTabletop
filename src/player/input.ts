@@ -4,6 +4,7 @@ export interface InputSnapshot {
   left: boolean;
   right: boolean;
   sprint: boolean;
+  jumpHeld: boolean;
 }
 
 type JumpHandler = () => void;
@@ -14,6 +15,7 @@ export class InputManager {
   private readonly held = new Set<string>();
   private readonly virtual = new Set<string>();
   private jumpHandler: JumpHandler = () => undefined;
+  private jumpReleaseHandler: JumpHandler = () => undefined;
   private lookHandler: LookHandler = () => undefined;
   private debugHandler: () => void = () => undefined;
   private bodySwitchHandler: BodySwitchHandler = () => undefined;
@@ -27,6 +29,10 @@ export class InputManager {
 
   onJump(handler: JumpHandler): void {
     this.jumpHandler = handler;
+  }
+
+  onJumpRelease(handler: JumpHandler): void {
+    this.jumpReleaseHandler = handler;
   }
 
   onLook(handler: LookHandler): void {
@@ -57,6 +63,7 @@ export class InputManager {
       left: active('KeyA'),
       right: active('KeyD'),
       sprint: active('ShiftLeft') || active('ShiftRight'),
+      jumpHeld: active('Space'),
     };
   }
 
@@ -75,7 +82,7 @@ export class InputManager {
       return;
     }
 
-    if (!this.isPointerLocked() && !event.isTrusted) return;
+    if (!this.isPointerLocked()) return;
     this.held.add(event.code);
 
     if (!event.repeat && /^Digit[123]$/.test(event.code)) {
@@ -90,6 +97,7 @@ export class InputManager {
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
     this.held.delete(event.code);
+    if (event.code === 'Space') this.jumpReleaseHandler();
   };
 
   private readonly onMouseMove = (event: MouseEvent): void => {

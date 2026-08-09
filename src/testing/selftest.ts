@@ -15,6 +15,9 @@ export interface TestApi {
   clearInput(): void;
   step(seconds: number): ControllerSnapshot;
   jump(): void;
+  releaseJump(): void;
+  packPress(): void;
+  packRelease(): void;
   switchBody(body: BodyId): void;
   colliders(): Array<{
     id: string;
@@ -28,6 +31,12 @@ export interface TestApi {
     terrainMeshes: number;
     groundTargetNames: string[];
   };
+  installPackTestArena(height: number, includeWall: boolean): {
+    x: number;
+    y: number;
+    z: number;
+  };
+  clearPackTestArena(): void;
   reset(): void;
 }
 
@@ -453,6 +462,173 @@ export function runPhaseThreeSelfTest(api: TestApi): void {
   panel.dataset.status = passed === results.length ? 'passed' : 'failed';
   panel.innerHTML = `
     <p>Phase 3 collision acceptance</p>
+    <h2>${passed}/${results.length} checks passed</h2>
+    <ol>${results
+      .map(
+        (result) => `
+          <li data-status="${result.passed ? 'passed' : 'failed'}">
+            <strong>${result.passed ? 'PASS' : 'FAIL'} — ${result.label}</strong>
+            <span>${result.detail}</span>
+          </li>`,
+      )
+      .join('')}</ol>`;
+  document.body.append(panel);
+}
+
+function preparePackLaunch(
+  api: TestApi,
+  height: number,
+  includeWall = false,
+): void {
+  const start = api.installPackTestArena(height, includeWall);
+  api.clearInput();
+  api.switchBody('primaris');
+  api.teleport(start.x, start.y + 0.05, start.z);
+  api.step(0.1);
+}
+
+function runCommittedPackFlight(
+  api: TestApi,
+  applyAirInput = false,
+): ControllerSnapshot {
+  api.packPress();
+  let snapshot = api.snapshot();
+  for (let step = 0; step < GAME.physics.fixedTimestepHz; step += 1) {
+    snapshot = api.step(FIXED_TIMESTEP);
+    if (snapshot.state === 'PACK_BALLISTIC') break;
+  }
+  if (applyAirInput) api.setInput('KeyA', true);
+  api.packRelease();
+  for (let step = 0; step < GAME.physics.fixedTimestepHz * 6; step += 1) {
+    snapshot = api.step(FIXED_TIMESTEP);
+    if (snapshot.state === 'GROUNDED') break;
+  }
+  api.clearInput();
+  return snapshot;
+}
+
+export function runPhaseFourSelfTest(api: TestApi): void {
+  const results: TestResult[] = [];
+
+  preparePackLaunch(api, 0);
+  api.packPress();
+  api.step(GAME.jumpPack.holdThresholdSeconds - FIXED_TIMESTEP);
+  const beforeThreshold = api.snapshot();
+  api.step(FIXED_TIMESTEP);
+  const atThreshold = api.snapshot();
+  api.packRelease();
+  results.push({
+    label: 'Grounded-at-keydown hold activation',
+    detail: `${beforeThreshold.state} at ${(GAME.jumpPack.holdThresholdSeconds - FIXED_TIMESTEP).toFixed(3)}s → ${atThreshold.state} at ${GAME.jumpPack.holdThresholdSeconds.toFixed(3)}s / launch vy ${(atThreshold.pack.launchVerticalSpeed ?? 0).toFixed(2)}`,
+    passed:
+      beforeThreshold.state === 'AIRBORNE' &&
+      atThreshold.state === 'PACK_BALLISTIC' &&
+      closeTo(
+        atThreshold.pack.launchVerticalSpeed ?? 0,
+        GAME.jumpPack.launchSpeedUnitsPerSec * Math.SQRT1_2,
+        0.05,
+      ),
+  });
+
+  api.clearPackTestArena();
+  preparePackLaunch(api, 0);
+  const flat = runCommittedPackFlight(api, true);
+  results.push({
+    label: 'Flat-ground fixed arc',
+    detail: `${(flat.pack.horizontalDistance ?? 0).toFixed(2)} u / ${(flat.pack.flightTime ?? 0).toFixed(2)} s / peak ${(flat.pack.peakHeight ?? 0).toFixed(2)} u`,
+    passed:
+      closeTo(flat.pack.horizontalDistance ?? 0, GAME.jumpPack.rangeUnits, 1) &&
+      closeTo(flat.pack.flightTime ?? 0, GAME.jumpPack.airtimeSeconds, 0.2) &&
+      closeTo(flat.pack.peakHeight ?? 0, GAME.jumpPack.peakHeightUnits, 0.35),
+  });
+
+  results.push({
+    label: 'Unsteerable committed flight',
+    detail: 'A input held after launch; range remains on the launch heading',
+    passed: closeTo(flat.position[0], 300, 0.05),
+  });
+
+  results.push({
+    label: 'Mat-height proximity burn',
+    detail: `burn ${(flat.pack.burnActivationDistance ?? 0).toFixed(2)} u / touchdown ${(flat.pack.touchdownSpeed ?? 0).toFixed(2)} u/s`,
+    passed:
+      (flat.pack.burnActivationDistance ?? Infinity) <=
+        GAME.jumpPack.retroBurn.activationHeightUnits &&
+      (flat.pack.burnActivationDistance ?? 0) > 9.5 &&
+      (flat.pack.touchdownSpeed ?? Infinity) <= 6,
+  });
+
+  api.clearPackTestArena();
+  preparePackLaunch(api, GAME.terrainLevels.levels[1]?.floorWorldUnits ?? 32);
+  const roof = runCommittedPackFlight(api);
+  results.push({
+    label: 'Level-2 proximity burn',
+    detail: `surface ${(roof.pack.landingSurfaceY ?? 0).toFixed(2)} u / burn ${(roof.pack.burnActivationDistance ?? 0).toFixed(2)} u / touchdown ${(roof.pack.touchdownSpeed ?? 0).toFixed(2)} u/s`,
+    passed:
+      closeTo(
+        roof.pack.landingSurfaceY ?? 0,
+        GAME.terrainLevels.levels[1]?.floorWorldUnits ?? 32,
+        0.01,
+      ) &&
+      (roof.pack.burnActivationDistance ?? Infinity) <=
+        GAME.jumpPack.retroBurn.activationHeightUnits &&
+      (roof.pack.touchdownSpeed ?? Infinity) <= 6,
+  });
+
+  api.clearPackTestArena();
+  preparePackLaunch(api, 0, true);
+  api.packPress();
+  let wallFlight = api.snapshot();
+  for (let step = 0; step < GAME.physics.fixedTimestepHz * 2; step += 1) {
+    wallFlight = api.step(FIXED_TIMESTEP);
+    if (
+      wallFlight.state === 'PACK_BALLISTIC' &&
+      Math.hypot(wallFlight.velocity[0], wallFlight.velocity[2]) < 0.01
+    ) {
+      break;
+    }
+  }
+  api.packRelease();
+  results.push({
+    label: 'Pack wall impact',
+    detail: `horizontal speed ${Math.hypot(wallFlight.velocity[0], wallFlight.velocity[2]).toFixed(2)} u/s / vertical ${wallFlight.velocity[1].toFixed(2)} u/s`,
+    passed:
+      wallFlight.state === 'PACK_BALLISTIC' &&
+      Math.hypot(wallFlight.velocity[0], wallFlight.velocity[2]) < 0.01,
+  });
+
+  api.clearPackTestArena();
+  api.switchBody('primaris');
+  api.teleport(0, -0.3, 173);
+  api.step(0.1);
+  const respawnsBefore = api.snapshot().respawnCount;
+  api.packPress();
+  let voidFlight = api.snapshot();
+  for (let step = 0; step < GAME.physics.fixedTimestepHz * 7; step += 1) {
+    voidFlight = api.step(FIXED_TIMESTEP);
+    if (voidFlight.respawnCount > respawnsBefore) break;
+  }
+  api.packRelease();
+  results.push({
+    label: 'Off-table void behavior',
+    detail: `burn ${voidFlight.pack.burnActivationDistance === null ? 'none' : 'fired'} / respawns ${respawnsBefore}→${voidFlight.respawnCount}`,
+    passed:
+      voidFlight.pack.burnActivationDistance === null &&
+      voidFlight.respawnCount > respawnsBefore,
+  });
+
+  api.clearPackTestArena();
+  api.switchBody('primaris');
+  api.reset();
+  api.clearInput();
+
+  const panel = document.createElement('section');
+  const passed = results.filter((result) => result.passed).length;
+  panel.id = 'self-test-report';
+  panel.className = 'self-test-report';
+  panel.dataset.status = passed === results.length ? 'passed' : 'failed';
+  panel.innerHTML = `
+    <p>Phase 4 measured acceptance</p>
     <h2>${passed}/${results.length} checks passed</h2>
     <ol>${results
       .map(

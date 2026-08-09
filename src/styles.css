@@ -202,6 +202,39 @@ kbd {
   text-transform: uppercase;
 }
 
+.pack-meter {
+  position: relative;
+  display: none;
+  width: 100%;
+  height: 2px;
+  margin-top: 11px;
+  background: rgba(217, 207, 184, 0.14);
+  overflow: visible;
+}
+
+.pack-meter.available {
+  display: block;
+}
+
+.pack-meter i {
+  position: absolute;
+  inset: 0;
+  background: #b67b56;
+  box-shadow: 0 0 10px rgba(182, 123, 86, 0.55);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.pack-meter small {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  color: #8f877c;
+  font: 8px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .status-card {
   right: 28px;
   min-width: 220px;
