@@ -4,12 +4,16 @@ import { GAME } from '../constants';
 import { boardInchesToWorld } from './layout';
 import {
   createFabricMaterial,
-  createPictureMaterial,
+  createImageMaterial,
   createPlasterMaterial,
   createPrintedMaterial,
   createRugMaterial,
   createWoodMaterial,
 } from './materials';
+
+const DOOR_OPENING_WIDTH = boardInchesToWorld(36);
+const DOOR_OPENING_HEIGHT = boardInchesToWorld(80);
+const DOOR_CENTER_X = 330;
 
 export interface DenRoom {
   readonly objectCount: number;
@@ -263,12 +267,32 @@ function addWindow(root: THREE.Group, wallX: number): number {
   const glassMaterial = new THREE.MeshStandardMaterial({
     color: 0x526577,
     emissive: 0x1d2935,
-    emissiveIntensity: 0.45,
+    emissiveIntensity: 0.16,
     roughness: 0.22,
     metalness: 0.08,
+    transparent: true,
+    opacity: 0.24,
+    depthWrite: false,
   });
   const trimMaterial = new THREE.MeshStandardMaterial({ color: 0xe3ded3, roughness: 0.75 });
-  place(group, mesh(boardInchesToWorld(0.4), height, width, glassMaterial, false), 0, 0, 0);
+  const exteriorMaterial = createImageMaterial(
+    '/assets/textures/den-window-blue-hour.png',
+    0.58,
+  );
+  place(
+    group,
+    mesh(boardInchesToWorld(0.24), height - frame * 0.7, width - frame * 0.7, exteriorMaterial),
+    0,
+    0,
+    0,
+  );
+  place(
+    group,
+    mesh(boardInchesToWorld(0.12), height, width, glassMaterial, false),
+    boardInchesToWorld(0.18),
+    0,
+    0,
+  );
   for (const y of [-1, 1]) {
     place(group, mesh(frame, frame, width + frame * 2, trimMaterial), 0, y * height / 2, 0);
   }
@@ -279,7 +303,7 @@ function addWindow(root: THREE.Group, wallX: number): number {
   place(group, mesh(frame, frame, width, trimMaterial), 0, 0, 0);
   group.position.set(wallX + boardInchesToWorld(0.8), GAME.spawn.roomFloorYUnits + boardInchesToWorld(61), -155);
   root.add(group);
-  return 7;
+  return 8;
 }
 
 function addWallArt(
@@ -288,18 +312,249 @@ function addWallArt(
   y: number,
   z: number,
   rotationY: number,
-  seed: number,
+  imagePath: string,
 ): number {
   const group = new THREE.Group();
+  group.name = 'den-framed-original-art';
   const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x302721, roughness: 0.68 });
   const width = boardInchesToWorld(22);
   const height = boardInchesToWorld(30);
   place(group, mesh(width + 7, height + 7, 3.5, frameMaterial), 0, 0, 0);
-  place(group, mesh(width, height, 4, createPictureMaterial(seed), false), 0, 0, -2.1);
+  // The group faces back into the room after its PI rotation; positive local Z
+  // is therefore the visible face in front of the frame.
+  place(group, mesh(width, height, 4, createImageMaterial(imagePath, 0.34), false), 0, 0, 2.1);
   group.position.set(x, y, z);
   group.rotation.y = rotationY;
   root.add(group);
   return 2;
+}
+
+function addStandingLamp(
+  root: THREE.Group,
+  x: number,
+  z: number,
+  lightColor: number,
+  intensity: number,
+): number {
+  const group = new THREE.Group();
+  group.name = 'den-standing-lamp';
+  const floorY = GAME.spawn.roomFloorYUnits;
+  const poleHeight = boardInchesToWorld(55);
+  const metal = new THREE.MeshStandardMaterial({
+    color: 0x282522,
+    metalness: 0.72,
+    roughness: 0.3,
+  });
+  const shadeMaterial = new THREE.MeshStandardMaterial({
+    color: 0xc8aa82,
+    emissive: lightColor,
+    emissiveIntensity: 0.52,
+    roughness: 0.78,
+    side: THREE.DoubleSide,
+  });
+  const bulbMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffecd0,
+    emissive: lightColor,
+    emissiveIntensity: 2.4,
+    roughness: 0.18,
+  });
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(24, 28, 5, 24), metal);
+  base.position.y = 2.5;
+  group.add(base);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 3, poleHeight, 14), metal);
+  pole.position.y = poleHeight / 2 + 5;
+  group.add(pole);
+  const shade = new THREE.Mesh(
+    new THREE.CylinderGeometry(19, 32, 42, 28, 1, true),
+    shadeMaterial,
+  );
+  shade.position.y = poleHeight + 5;
+  group.add(shade);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(7.5, 16, 10), bulbMaterial);
+  bulb.position.y = poleHeight + 7;
+  group.add(bulb);
+
+  group.position.set(x, floorY, z);
+  root.add(group);
+
+  const light = new THREE.PointLight(lightColor, intensity, 720, 1.45);
+  light.name = 'standing-lamp-practical-light';
+  light.position.set(x, floorY + poleHeight + 7, z);
+  root.add(light);
+  return 5;
+}
+
+function addDoorAndHallway(
+  root: THREE.Group,
+  roomDepth: number,
+  ceilingY: number,
+  plaster: THREE.Material,
+  wood: THREE.Material,
+  trim: THREE.Material,
+): number {
+  const group = new THREE.Group();
+  group.name = 'half-open-den-door-and-lit-hallway';
+  const floorY = GAME.spawn.roomFloorYUnits;
+  const backWallZ = roomDepth / 2;
+  const casing = boardInchesToWorld(2.6);
+  const doorWidth = DOOR_OPENING_WIDTH - boardInchesToWorld(1.5);
+  const doorHeight = DOOR_OPENING_HEIGHT - boardInchesToWorld(1.2);
+  let count = 0;
+
+  for (const side of [-1, 1]) {
+    place(
+      group,
+      mesh(casing, DOOR_OPENING_HEIGHT + casing, boardInchesToWorld(1.1), trim),
+      DOOR_CENTER_X + side * (DOOR_OPENING_WIDTH / 2 + casing / 2),
+      floorY + DOOR_OPENING_HEIGHT / 2,
+      backWallZ - boardInchesToWorld(0.9),
+    );
+    count += 1;
+  }
+  place(
+    group,
+    mesh(DOOR_OPENING_WIDTH + casing * 2, casing, boardInchesToWorld(1.1), trim),
+    DOOR_CENTER_X,
+    floorY + DOOR_OPENING_HEIGHT + casing / 2,
+    backWallZ - boardInchesToWorld(0.9),
+  );
+  count += 1;
+
+  const litPortal = mesh(
+    DOOR_OPENING_WIDTH * 0.91,
+    DOOR_OPENING_HEIGHT * 0.96,
+    boardInchesToWorld(0.18),
+    new THREE.MeshBasicMaterial({ color: 0xd69b66 }),
+  );
+  litPortal.name = 'warm-lit-hallway-portal';
+  place(
+    group,
+    litPortal,
+    DOOR_CENTER_X,
+    floorY + DOOR_OPENING_HEIGHT * 0.48,
+    backWallZ + boardInchesToWorld(70),
+  );
+  count += 1;
+
+  const doorPivot = new THREE.Group();
+  doorPivot.name = 'half-open-door-leaf';
+  doorPivot.position.set(
+    DOOR_CENTER_X - DOOR_OPENING_WIDTH / 2 + casing * 0.45,
+    floorY,
+    backWallZ - boardInchesToWorld(1.15),
+  );
+  doorPivot.rotation.y = THREE.MathUtils.degToRad(-55);
+  const doorMaterial = new THREE.MeshStandardMaterial({
+    color: 0x68452f,
+    roughness: 0.68,
+  });
+  const door = mesh(doorWidth, doorHeight, boardInchesToWorld(1.35), doorMaterial);
+  door.position.set(doorWidth / 2, doorHeight / 2, 0);
+  doorPivot.add(door);
+  const panelMaterial = new THREE.MeshStandardMaterial({ color: 0x815d43, roughness: 0.72 });
+  for (const y of [doorHeight * 0.28, doorHeight * 0.69]) {
+    const panel = mesh(
+      doorWidth * 0.68,
+      doorHeight * 0.28,
+      boardInchesToWorld(0.22),
+      panelMaterial,
+    );
+    panel.position.set(doorWidth * 0.5, y, -boardInchesToWorld(0.8));
+    doorPivot.add(panel);
+    count += 1;
+  }
+  const knobMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb28a45,
+    metalness: 0.82,
+    roughness: 0.24,
+  });
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(4.2, 16, 10), knobMaterial);
+  knob.position.set(doorWidth - boardInchesToWorld(3.1), doorHeight * 0.51, -boardInchesToWorld(1.25));
+  doorPivot.add(knob);
+  group.add(doorPivot);
+  count += 2;
+
+  const hallwayDepth = boardInchesToWorld(78);
+  const hallwayWidth = DOOR_OPENING_WIDTH * 1.28;
+  const hallwayHeight = ceilingY - floorY;
+  const hallPlaster = (plaster as THREE.MeshStandardMaterial).clone();
+  hallPlaster.color.set(0xe2d4c2);
+  hallPlaster.emissive.set(0x39291d);
+  hallPlaster.emissiveIntensity = 0.62;
+  place(
+    group,
+    mesh(hallwayWidth, 2.2, hallwayDepth, wood),
+    DOOR_CENTER_X,
+    floorY - 1,
+    backWallZ + hallwayDepth / 2,
+  );
+  for (const side of [-1, 1]) {
+    place(
+      group,
+      mesh(boardInchesToWorld(1.1), hallwayHeight, hallwayDepth, hallPlaster),
+      DOOR_CENTER_X + side * hallwayWidth / 2,
+      floorY + hallwayHeight / 2,
+      backWallZ + hallwayDepth / 2,
+    );
+  }
+  place(
+    group,
+    mesh(hallwayWidth, hallwayHeight, boardInchesToWorld(1.1), hallPlaster),
+    DOOR_CENTER_X,
+    floorY + hallwayHeight / 2,
+    backWallZ + hallwayDepth,
+  );
+  place(
+    group,
+    mesh(hallwayWidth, 2.2, hallwayDepth, hallPlaster),
+    DOOR_CENTER_X,
+    ceilingY,
+    backWallZ + hallwayDepth / 2,
+  );
+  count += 5;
+
+  const spillGeometry = new THREE.BufferGeometry();
+  const spillY = floorY + 0.22;
+  spillGeometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(
+      [
+        DOOR_CENTER_X - DOOR_OPENING_WIDTH * 0.42, spillY, backWallZ - 3,
+        DOOR_CENTER_X + DOOR_OPENING_WIDTH * 0.42, spillY, backWallZ - 3,
+        DOOR_CENTER_X + 150, spillY, backWallZ - 310,
+        DOOR_CENTER_X - DOOR_OPENING_WIDTH * 0.42, spillY, backWallZ - 3,
+        DOOR_CENTER_X + 150, spillY, backWallZ - 310,
+        DOOR_CENTER_X - 180, spillY, backWallZ - 310,
+      ],
+      3,
+    ),
+  );
+  const spill = new THREE.Mesh(
+    spillGeometry,
+    new THREE.MeshBasicMaterial({
+      color: 0xffbd78,
+      transparent: true,
+      opacity: 0.12,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }),
+  );
+  spill.name = 'warm-hallway-light-spill';
+  group.add(spill);
+  count += 1;
+
+  const hallLight = new THREE.PointLight(0xffc58a, 9000, 820, 1.45);
+  hallLight.name = 'hallway-practical-light';
+  hallLight.position.set(
+    DOOR_CENTER_X,
+    floorY + boardInchesToWorld(60),
+    backWallZ + boardInchesToWorld(19),
+  );
+  group.add(hallLight);
+  root.add(group);
+  return count;
 }
 
 function addCeilingFan(root: THREE.Group, ceilingY: number): { blades: THREE.Group; count: number } {
@@ -337,7 +592,8 @@ function addCeilingFan(root: THREE.Group, ceilingY: number): { blades: THREE.Gro
   group.position.set(35, ceilingY, 45);
   root.add(group);
 
-  const light = new THREE.PointLight(0xffc98d, 3100, 650, 1.65);
+  const light = new THREE.PointLight(0xffc98d, 1800, 520, 1.45);
+  light.name = 'ceiling-fan-low-fill-light';
   light.position.set(35, ceilingY - boardInchesToWorld(19), 45);
   root.add(light);
   return { blades, count: 9 };
@@ -361,6 +617,8 @@ export function addDenRoom(root: THREE.Group): DenRoom {
   const wood = createWoodMaterial();
   const trim = new THREE.MeshStandardMaterial({ color: 0xe1dbcf, roughness: 0.76 });
   let objectCount = 0;
+  const doorLeft = DOOR_CENTER_X - DOOR_OPENING_WIDTH / 2;
+  const doorRight = DOOR_CENTER_X + DOOR_OPENING_WIDTH / 2;
 
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), wood);
   floor.rotation.x = -Math.PI / 2;
@@ -383,23 +641,76 @@ export function addDenRoom(root: THREE.Group): DenRoom {
   place(room, mesh(wallThickness, wallHeight, roomDepth, plaster, false), -roomWidth / 2, floorY + wallHeight / 2, 0);
   place(room, mesh(wallThickness, wallHeight, roomDepth, plaster, false), roomWidth / 2, floorY + wallHeight / 2, 0);
   place(room, mesh(roomWidth, wallHeight, wallThickness, plaster, false), 0, floorY + wallHeight / 2, -roomDepth / 2);
-  place(room, mesh(roomWidth, wallHeight, wallThickness, plaster, false), 0, floorY + wallHeight / 2, roomDepth / 2);
+  const backLeftWidth = doorLeft + roomWidth / 2;
+  const backRightWidth = roomWidth / 2 - doorRight;
+  place(
+    room,
+    mesh(backLeftWidth, wallHeight, wallThickness, plaster, false),
+    -roomWidth / 2 + backLeftWidth / 2,
+    floorY + wallHeight / 2,
+    roomDepth / 2,
+  );
+  place(
+    room,
+    mesh(backRightWidth, wallHeight, wallThickness, plaster, false),
+    doorRight + backRightWidth / 2,
+    floorY + wallHeight / 2,
+    roomDepth / 2,
+  );
+  const doorHeaderHeight = wallHeight - DOOR_OPENING_HEIGHT;
+  place(
+    room,
+    mesh(DOOR_OPENING_WIDTH, doorHeaderHeight, wallThickness, plaster, false),
+    DOOR_CENTER_X,
+    floorY + DOOR_OPENING_HEIGHT + doorHeaderHeight / 2,
+    roomDepth / 2,
+  );
   place(room, mesh(roomWidth, wallThickness, roomDepth, ceilingPlaster, false), 0, ceilingY, 0);
-  objectCount += 5;
+  objectCount += 7;
 
   const baseboardHeight = boardInchesToWorld(5.5);
   const baseboardDepth = boardInchesToWorld(0.8);
   place(room, mesh(baseboardDepth, baseboardHeight, roomDepth, trim, false), -roomWidth / 2 + wallThickness, floorY + baseboardHeight / 2, 0);
   place(room, mesh(baseboardDepth, baseboardHeight, roomDepth, trim, false), roomWidth / 2 - wallThickness, floorY + baseboardHeight / 2, 0);
   place(room, mesh(roomWidth, baseboardHeight, baseboardDepth, trim, false), 0, floorY + baseboardHeight / 2, -roomDepth / 2 + wallThickness);
-  place(room, mesh(roomWidth, baseboardHeight, baseboardDepth, trim, false), 0, floorY + baseboardHeight / 2, roomDepth / 2 - wallThickness);
-  objectCount += 4;
+  place(
+    room,
+    mesh(backLeftWidth, baseboardHeight, baseboardDepth, trim, false),
+    -roomWidth / 2 + backLeftWidth / 2,
+    floorY + baseboardHeight / 2,
+    roomDepth / 2 - wallThickness,
+  );
+  place(
+    room,
+    mesh(backRightWidth, baseboardHeight, baseboardDepth, trim, false),
+    doorRight + backRightWidth / 2,
+    floorY + baseboardHeight / 2,
+    roomDepth / 2 - wallThickness,
+  );
+  objectCount += 5;
 
   objectCount += addBookcase(room, -250, roomDepth / 2 - boardInchesToWorld(7.5), wood);
   objectCount += addSofa(room, roomWidth / 2 - boardInchesToWorld(18), 95);
   objectCount += addWindow(room, -roomWidth / 2);
-  objectCount += addWallArt(room, 80, 120, roomDepth / 2 - wallThickness - 2, Math.PI, 19);
-  objectCount += addWallArt(room, 230, 105, roomDepth / 2 - wallThickness - 2, Math.PI, 31);
+  objectCount += addWallArt(
+    room,
+    20,
+    120,
+    roomDepth / 2 - wallThickness - 2,
+    Math.PI,
+    '/assets/textures/den-art-ringworld.png',
+  );
+  objectCount += addWallArt(
+    room,
+    158,
+    105,
+    roomDepth / 2 - wallThickness - 2,
+    Math.PI,
+    '/assets/textures/den-art-orbital-ocean.png',
+  );
+  objectCount += addDoorAndHallway(room, roomDepth, ceilingY, plaster, wood, trim);
+  objectCount += addStandingLamp(room, 320, -255, 0xffc07b, 7200);
+  objectCount += addStandingLamp(room, -370, 245, 0xffb66f, 6400);
 
   const fan = addCeilingFan(room, ceilingY - wallThickness);
   objectCount += fan.count;

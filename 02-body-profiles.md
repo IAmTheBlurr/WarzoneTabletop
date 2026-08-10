@@ -11,8 +11,8 @@ All values are in world units (feet) and units/second. Mirror of `game-constants
 | Fiction | Ordinary human trooper, flak armour | Adepta Sororitas in power armour | Transhuman in Mk X power armour |
 | Standing height | 5.8 (≈5'9") | 6.3 (≈6'3" armoured) | 8.5 (armoured) |
 | **Camera eye height** | **5.4** | **5.9** | **8.1** |
-| Combat run speed | 7.0 | 8.5 | 10.5 |
-| Sprint speed (hold Shift) | 12.5 | 15.0 | 18.0 |
+| Combat run speed | 11.326 | 13.753 | 16.989 |
+| Sprint speed (hold Shift) | 20.225 | 24.270 | 29.124 |
 | Acceleration (units/s²) | 45 | 28 | 22 |
 | Deceleration (units/s²) | 60 | 40 | 35 |
 | Air control multiplier | 0.9 | 0.6 | 0.5 |

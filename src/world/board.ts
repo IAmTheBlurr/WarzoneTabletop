@@ -225,26 +225,11 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
   addTableStructure(root);
   const tabletopDetailCount = addTabletopDetails(root);
 
-  const hemisphere = new THREE.HemisphereLight(0x9eb0bf, 0x241b18, 1.6);
+  // Low-level sky fill only; the visible standing lamps, hallway, and fan are
+  // the dominant sources so the room reads as locally illuminated.
+  const hemisphere = new THREE.HemisphereLight(0x8491a0, 0x211a17, 0.34);
   scene.add(hemisphere);
-
-  const key = new THREE.DirectionalLight(0xffd9a1, 3.4);
-  key.position.set(-120, 220, -90);
-  key.target.position.set(0, 0, 20);
-  key.castShadow = true;
-  key.shadow.mapSize.set(256, 256);
-  key.shadow.camera.left = -180;
-  key.shadow.camera.right = 180;
-  key.shadow.camera.top = 220;
-  key.shadow.camera.bottom = -220;
-  key.shadow.camera.near = 20;
-  key.shadow.camera.far = 520;
-  key.shadow.bias = -0.0004;
-  scene.add(key, key.target);
-
-  const edgeGlow = new THREE.PointLight(0xb74d2f, 650, 420, 1.8);
-  edgeGlow.position.set(160, 30, -210);
-  scene.add(edgeGlow);
+  scene.add(new THREE.AmbientLight(0x806f62, 0.1));
 
   // Ground raycasts run before the first render, so world matrices must not
   // wait for WebGLRenderer's implicit scene update.

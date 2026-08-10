@@ -30,6 +30,7 @@ export interface TestApi {
   terrainSamples(): Array<{ label: string; x: number; y: number; z: number }>;
   worldStats(): {
     footprintPieces: number;
+    footprintThickness: number;
     colliders: number;
     terrainMeshes: number;
     groundTargetNames: string[];
@@ -380,7 +381,7 @@ export function runPhaseThreeSelfTest(api: TestApi): void {
   const stats = api.worldStats();
   results.push({
     label: 'Footprint and terrain registration',
-    detail: `${stats.footprintPieces} decals / ${stats.terrainMeshes} terrain meshes / ${stats.colliders} AABBs`,
+    detail: `${stats.footprintPieces} raised boards / ${stats.terrainMeshes} terrain meshes / ${stats.colliders} AABBs`,
     passed:
       stats.footprintPieces === 16 &&
       stats.terrainMeshes <= stats.colliders &&
@@ -418,8 +419,9 @@ export function runPhaseThreeSelfTest(api: TestApi): void {
   });
 
   const samples = api.terrainSamples();
-  const levelOne = samples.find((sample) => closeTo(sample.y, 16, 0.01));
-  const levelTwo = samples.find((sample) => closeTo(sample.y, 32, 0.01));
+  const footprintBase = boardInchesToWorld(1 / 16);
+  const levelOne = samples.find((sample) => closeTo(sample.y, 16 + footprintBase, 0.01));
+  const levelTwo = samples.find((sample) => closeTo(sample.y, 32 + footprintBase, 0.01));
   let levelGroundingPassed = false;
   if (levelOne && levelTwo) {
     api.switchBody('primaris');
@@ -429,9 +431,9 @@ export function runPhaseThreeSelfTest(api: TestApi): void {
     const two = api.step(0.1);
     levelGroundingPassed =
       one.state === 'GROUNDED' &&
-      closeTo(one.position[1], 16, 0.01) &&
+      closeTo(one.position[1], 16 + footprintBase, 0.01) &&
       two.state === 'GROUNDED' &&
-      closeTo(two.position[1], 32, 0.01);
+      closeTo(two.position[1], 32 + footprintBase, 0.01);
   }
   results.push({
     label: 'Level-1 and Level-2 grounding',
@@ -777,7 +779,6 @@ export function runControlsSelfTest(api: TestApi): void {
       closeTo(speed, GAME.bodies.primaris.sprintSpeed, 0.02),
     ),
   });
-
   api.reset();
   api.look(100, -100);
   const rightAndUp = api.snapshot();
@@ -848,11 +849,28 @@ export function runEnvironmentSelfTest(api: TestApi): void {
       stats.environmentNames.includes('full-scale-home-den'),
   });
   results.push({
+    label: 'Localized practical-light room features',
+    detail: 'two standing lamps · fan fill · lit half-open doorway · exterior window',
+    passed:
+      stats.environmentNames.includes('half-open-den-door-and-lit-hallway') &&
+      stats.environmentNames.includes('standing-lamp-practical-light') &&
+      stats.environmentNames.includes('ceiling-fan-low-fill-light') &&
+      stats.environmentNames.includes('den-window'),
+  });
+  results.push({
     label: 'Miniature-scale surface density',
     detail: `${stats.tabletopDetails} paint, scratch, flock, stone, and hobby details`,
     passed:
       stats.tabletopDetails >= 350 &&
       stats.environmentNames.includes('miniature-scale-surface-and-hobby-details'),
+  });
+  results.push({
+    label: 'Raised rubble terrain footprints',
+    detail: `${stats.footprintPieces} pieces · ${(stats.footprintThickness / boardInchesToWorld(1)).toFixed(4)}in physical board thickness`,
+    passed:
+      stats.footprintPieces === 16 &&
+      closeTo(stats.footprintThickness, boardInchesToWorld(1 / 16), 0.001) &&
+      stats.environmentNames.includes('raised-rubble-footprints--excluded-from-ground-rays'),
   });
 
   const primarisRunCrossing =
@@ -863,8 +881,8 @@ export function runEnvironmentSelfTest(api: TestApi): void {
     label: 'Primaris traversal targets',
     detail: `run ${primarisRunCrossing.toFixed(2)}s · sprint ${primarisSprintCrossing.toFixed(2)}s across 44in`,
     passed:
-      closeTo(primarisRunCrossing, 22.35, 0.02) &&
-      closeTo(primarisSprintCrossing, 13.04, 0.02),
+      closeTo(primarisRunCrossing, 13.81, 0.02) &&
+      closeTo(primarisSprintCrossing, 8.06, 0.02),
   });
 
   results.push({

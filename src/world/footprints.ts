@@ -7,10 +7,12 @@ import {
   getFootprintSpec,
   type FootprintPlacement,
 } from './layout';
+import { createRubbleFootprintMaterial } from './materials';
 import { PALETTE } from './palette';
 
-const DECAL_HEIGHT = 0.02;
-const BORDER_HEIGHT = 0.035;
+export const FOOTPRINT_THICKNESS = boardInchesToWorld(1 / 16);
+const FOOTPRINT_BASE_HEIGHT = 0.014;
+const BORDER_HEIGHT = 0.026;
 const TRIANGLE_SAGITTA_BOARD_INCHES = 0.25;
 
 function centeredRectangle(width: number, depth: number): THREE.Shape {
@@ -61,20 +63,10 @@ function shapeForPlacement(placement: FootprintPlacement): THREE.Shape {
 
 export function createFootprints(root: THREE.Group): THREE.Group {
   const group = new THREE.Group();
-  group.name = 'footprint-decals--excluded-from-ground-rays';
+  group.name = 'raised-rubble-footprints--excluded-from-ground-rays';
   root.add(group);
 
-  const fillMaterial = new THREE.MeshStandardMaterial({
-    color: PALETTE.templateTan,
-    roughness: 0.88,
-    metalness: 0,
-    transparent: true,
-    opacity: 0.88,
-    side: THREE.DoubleSide,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
-  });
+  const fillMaterial = createRubbleFootprintMaterial();
   const lineMaterial = new THREE.LineBasicMaterial({
     color: PALETTE.templateDark,
     transparent: true,
@@ -93,11 +85,16 @@ export function createFootprints(root: THREE.Group): THREE.Group {
 
   for (const placement of BATTLEFIELD_LAYOUT) {
     const shape = shapeForPlacement(placement);
-    const geometry = new THREE.ShapeGeometry(shape, 24);
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+      depth: FOOTPRINT_THICKNESS,
+      bevelEnabled: false,
+      curveSegments: 24,
+      steps: 1,
+    });
     geometry.rotateX(-Math.PI / 2);
     transform.position.set(
       boardInchesToWorld(placement.boardX),
-      DECAL_HEIGHT,
+      FOOTPRINT_BASE_HEIGHT,
       boardInchesToWorld(placement.boardZ),
     );
     transform.rotation.set(0, THREE.MathUtils.degToRad(placement.rotationDegrees), 0);
@@ -107,7 +104,14 @@ export function createFootprints(root: THREE.Group): THREE.Group {
 
     const outlinePoints = shape
       .getPoints(32)
-      .map((point) => new THREE.Vector3(point.x, BORDER_HEIGHT, -point.y));
+      .map(
+        (point) =>
+          new THREE.Vector3(
+            point.x,
+            FOOTPRINT_THICKNESS + BORDER_HEIGHT,
+            -point.y,
+          ),
+      );
     for (let index = 0; index < outlinePoints.length; index += 1) {
       const start = outlinePoints[index]!.clone().applyMatrix4(transform.matrix);
       const end = outlinePoints[(index + 1) % outlinePoints.length]!
@@ -125,7 +129,7 @@ export function createFootprints(root: THREE.Group): THREE.Group {
       const mark = new THREE.PlaneGeometry(Math.min(width, depth) * 0.12, 0.12);
       transform.position.set(
         boardInchesToWorld(placement.boardX) + localZ * Math.sin(angle),
-        BORDER_HEIGHT + 0.002,
+        FOOTPRINT_BASE_HEIGHT + FOOTPRINT_THICKNESS + BORDER_HEIGHT + 0.002,
         boardInchesToWorld(placement.boardZ) + localZ * Math.cos(angle),
       );
       transform.rotation.set(-Math.PI / 2, 0, angle);
@@ -164,6 +168,7 @@ export function createFootprints(root: THREE.Group): THREE.Group {
   }
 
   group.userData.pieceCount = BATTLEFIELD_LAYOUT.length;
+  group.userData.thicknessWorldUnits = FOOTPRINT_THICKNESS;
 
   return group;
 }

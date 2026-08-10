@@ -1,6 +1,6 @@
 # 04 — Terrain Footprints & Terrain (11th Edition)
 
-11th-edition 40k defines terrain by **footprints**: flat printed templates laid on the mat that mark where terrain rules apply. GW publishes official template sizes (also distributed as printable files), and third parties cut acrylic versions to the same dimensions. In-game, footprints render as flat printed-template decals on the mat, with simple low-poly terrain volumes standing on them.
+11th-edition 40k defines terrain by **footprints**: printed boards laid on the mat that mark where terrain rules apply. The physical reference pieces used for this project are 1/16-inch-thick board with top-down rubble printing. In-game, footprints therefore render as raised rubble-textured geometry, with the low-poly terrain volumes standing on their top surfaces.
 
 ## 4.1 The standard competitive set — 16 pieces, 5 shapes
 
@@ -39,7 +39,7 @@ i.e. a right trapezoid-ish quad: full 8" base, a 1.5" edge at the far end, one v
 
 Footprints define the *plan*; the terrain standing on them is simple massing:
 
-- **Level heights:** floors at 3 board inches (16 world units) and 6 board inches (32 world units) above the mat. Walls/floors ~0.15 board inches thick (≈0.8 world units) — miniature-terrain chunky, not architectural.
+- **Level heights:** floors at 3 board inches (16 world units) and 6 board inches (32 world units) above the footprint top. Walls/floors ~0.15 board inches thick (≈0.8 world units) — miniature-terrain chunky, not architectural.
 - **Minimum doorway / passable-gap width: 5.0 world units** (the Primaris capsule is 2.8 units wide — see `07-collision-and-ground.md §7.1`). Any gap narrower than 5.0 is deliberately Primaris-blocking; if used, make it clearly readable (2.5-unit "small-body-only" slots are a fun traversal feature, never an accident).
 - **Large rectangles & triangles:** multi-level open-topped gothic *ruins* — an L- or U-shaped arrangement of walls on the footprint edge, with partial Level-1 (and sometimes Level-2) floor slabs the player can jump-pack onto. Include at least one interior floor reachable by pack jump (peak = exactly 16 units, so Level-1 floors are the natural landing spots).
 - **Medium rectangles:** solid obscuring blocks — shipping-container stacks, silo clusters, or a solid ruin chunk. 1–2 levels.
@@ -64,7 +64,8 @@ A reasonable v1 layout — roughly rotationally symmetric about the board center
 
 Layout is aesthetic, not rules-critical — the agent may adjust for readability and fun traversal, but keep center-heavy large pieces (blocks sightlines across the middle, standard competitive practice) and rough 180° symmetry.
 
-## 4.5 Rendering the templates
+## 4.5 Rendering the footprint boards
 
-- Render each footprint as a **flat decal** slightly above the mat (y ≈ 0.02, polygonOffset to avoid z-fighting): a printed-paper look — off-white or kraft-tan fill, thin dark border line, maybe faint hazard striping or an Imperial aquila-*like* generic glyph (avoid actual GW iconography).
-- The terrain volume sits *on* the template with a small inset (~0.25 board inches) so the printed border stays visible around the base — exactly how it looks on a real table.
+- Extrude each footprint to exactly **1/16 physical board inch** (0.3333 world units) above the mat. The top receives a dense, top-down rubble print with grit, stones, cracks, and tonal variation; the modeled vertical edge must remain visible at miniature eye height.
+- The terrain volume sits *on* the board's top surface with a small inset (~0.25 board inches) so the printed border stays visible around the base — exactly how it looks on a real table.
+- Footprint geometry remains a separate named group and placement still comes exclusively from the set layout table, so a future configurable footprint-set version can change the full set's positions and orientations without rewriting terrain meshes.

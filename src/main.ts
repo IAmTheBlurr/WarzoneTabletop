@@ -72,6 +72,7 @@ const controller = new PlayerController(camera, input, world);
 const footstepAudio = new FootstepAudio();
 const searchParams = new URLSearchParams(window.location.search);
 const cornerPreview = searchParams.get('preview') === 'corner';
+const windowPreview = searchParams.get('preview') === 'window';
 const DEBUG_ARC = searchParams.has('debugArc');
 let debugArcLine: THREE.Line | null = null;
 let previousControllerState = controller.state;
@@ -364,6 +365,9 @@ function render(now: number): void {
   if (cornerPreview) {
     camera.position.set(-178, 152, -224);
     camera.lookAt(0, 9, 0);
+  } else if (windowPreview) {
+    camera.position.set(115, 138, -35);
+    camera.lookAt(-440, 132, -155);
   } else {
     controller.updateCamera();
   }
@@ -430,12 +434,19 @@ const testApi = {
   terrainSamples: () => terrain.groundSamples.map((sample) => ({ ...sample })),
   worldStats: () => ({
     footprintPieces: footprints.userData.pieceCount as number,
+    footprintThickness: footprints.userData.thicknessWorldUnits as number,
     colliders: world.collidables.length,
     terrainMeshes: terrain.terrainMeshCount,
     groundTargetNames: world.groundRaycastGroup.children.map((child) => child.name),
     roomObjects: world.environmentStats.roomObjects,
     tabletopDetails: world.environmentStats.tabletopDetails,
-    environmentNames: world.sceneRoot.children.map((child) => child.name),
+    environmentNames: (() => {
+      const names: string[] = [];
+      world.sceneRoot.traverse((object) => {
+        if (object.name) names.push(object.name);
+      });
+      return names;
+    })(),
     renderGroups: world.sceneRoot.children.map((child) => {
       let meshes = 0;
       let lines = 0;

@@ -40,7 +40,7 @@ All three profiles from `02-body-profiles.md` including per-body accel/decel/air
 
 ## Phase 3 — Footprints & terrain
 
-Footprint decals per `04 §4.1–4.2` (truncated-triangle shape via `THREE.Shape`), the §4.4 layout, terrain massing: ruins with Level-1 floors at 16 and some Level-2 at 32, containers, chest-high lines at ~5.3, all doorways ≥ 5.0 units. Every terrain volume registers its AABBs into the `collidables` list and its meshes into the `groundRaycastGroup` per `07 §7.2` (decals excluded from raycasting).
+Raised 1/16-inch rubble footprint boards per `04 §4.1–4.2` (truncated-triangle shape via `THREE.Shape`), the §4.4 layout, terrain massing: ruins with Level-1 floors 16 units above the footprint top and some Level-2 floors 32 units above it, containers, chest-high lines at ~5.3, all doorways ≥ 5.0 units. Every terrain volume registers its AABBs into the `collidables` list and its meshes into the `groundRaycastGroup` per `07 §7.2` (footprint boards remain excluded pending the configurable-set phase).
 
 **Accept:** board reads as a plausible tournament table from a corner screenshot; the `07 §7.7` acceptance tests pass (wall sliding, slab-edge stability, auto step-up, doorway widths per body); can stand on Level-1 and Level-2 floors; line terrain is over-the-head for Guardsman, chest-high for Primaris.
 
@@ -52,8 +52,8 @@ Full `03-jump-pack-physics.md`: 0.5 s hold arms and fires (Primaris only), fixed
 
 ## Phase 5 — Polish (optional, in order of value)
 
-1. Landing dust puff + camera dip; pack-flight FOV kick (+5°) and rumble.
-2. Drybrush-style edge lightening on terrain; template border glyphs.
+1. Landing dust puff without camera displacement, sway, bob, roll, or dynamic FOV.
+2. Drybrush-style edge lightening on terrain; raised rubble footprint borders.
 3. One hobby prop off-board (giant D6).
 4. Simple footstep audio scaled to body (Primaris thuds).
 

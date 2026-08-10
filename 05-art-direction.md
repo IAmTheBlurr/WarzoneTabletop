@@ -7,8 +7,8 @@
 ## What sells the illusion (in priority order)
 
 1. **Scale cues beyond the board.** The single strongest signal. Even a low-effort version — the mat ends, a wooden table edge drops away, a vast dim floor lies far below, maybe a colossal blurry bookshelf silhouette in the fog — instantly reframes everything as miniature. Board sits at "table height": put the room floor ~180 world units below the mat (visual scenery only — never collidable or raycastable, see `07 §7.2`; the respawn plane catches the player just above it).
-2. **The printed-template look.** Footprint decals that read as paper/acrylic templates (see `04-terrain-footprints.md §4.5`), with terrain sitting on them slightly inset.
-3. **Miniature materials, not real materials.** Flat/low-roughness plastic-paint sheen, visible "drybrush" edge highlights (bake into vertex colors or a simple edge-lightening trick), slightly toy-like saturated colors. No PBR realism, no texture-photo walls. MeshLambert/MeshToon-adjacent shading is the right neighborhood.
+2. **The printed-board look.** Raised 1/16-inch footprint boards with top-down rubble printing and terrain sitting on them slightly inset (see `04-terrain-footprints.md §4.5`).
+3. **Miniature terrain materials, real room materials.** Terrain keeps painted-resin/MDF drybrush cues and chunky saturated forms. The surrounding den deliberately uses PBR-style plaster, hardwood, fabric, glass, and photographic/generated art to maximize the miniature-vs-real-room contrast.
 4. **Chunky geometry.** Walls too thick, details oversized, bevels exaggerated — miniature terrain is cast chunky so it survives handling. Low-poly is not a budget compromise here; it *is* the look.
 5. **Hobby-table props (nice-to-have).** A giant D6 the size of a small building resting off-board, a tape measure, a paint pot. One or two props max — restraint keeps it a battlefield, not a joke.
 
@@ -28,8 +28,8 @@ Signature move: the world outside the board desaturates and darkens into `roomFo
 
 ## Lighting
 
-- One warm key **DirectionalLight** angled like a desk lamp / ceiling light — this is the "hobby room" sun. Soft shadows if cheap (a single shadow-casting light, low-res map is fine and even on-theme).
-- Gentle cool ambient/hemisphere fill so shadow sides stay readable.
+- Visible standing lamps, the ceiling-fan fixture, and light from the hallway are the dominant local sources. Do not substitute a broad directional key for practical fixtures.
+- Gentle ambient/hemisphere fill exists only to keep unlit sides readable.
 - **Fog** starting past the board edge so the room reads as huge and dim without modeling it.
 
 ## What to avoid

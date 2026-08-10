@@ -9,6 +9,7 @@ import {
   type FootprintPlacement,
 } from './layout';
 import { PALETTE } from './palette';
+import { FOOTPRINT_THICKNESS } from './footprints';
 
 export interface TerrainGroundSample {
   readonly label: string;
@@ -101,7 +102,11 @@ function collectContactShadow(
   const shadow = new THREE.PlaneGeometry(width + 1.4, depth + 1.4);
   shadow.rotateX(-Math.PI / 2);
   const transform = new THREE.Object3D();
-  transform.position.set(mesh.position.x + 0.34, 0.041, mesh.position.z + 0.52);
+  transform.position.set(
+    mesh.position.x + 0.34,
+    FOOTPRINT_THICKNESS + 0.041,
+    mesh.position.z + 0.52,
+  );
   transform.rotation.y = mesh.rotation.y;
   transform.updateMatrix();
   shadow.applyMatrix4(transform.matrix);
@@ -126,7 +131,7 @@ function addBox(
     new THREE.BoxGeometry(width, height, depth),
     material(color),
   );
-  mesh.position.set(world.x, bottomY + height / 2, world.y);
+  mesh.position.set(world.x, FOOTPRINT_THICKNESS + bottomY + height / 2, world.y);
   mesh.rotation.y = THREE.MathUtils.degToRad(placement.rotationDegrees);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -219,7 +224,7 @@ function addRuin(
   context.samples.push({
     label: `${placement.key} level 1`,
     x: levelOnePoint.x,
-    y: levelOne,
+    y: levelOne + FOOTPRINT_THICKNESS,
     z: levelOnePoint.y,
   });
 
@@ -260,7 +265,7 @@ function addRuin(
   context.samples.push({
     label: `${placement.key} level 2`,
     x: levelTwoPoint.x,
-    y: levelTwo,
+    y: levelTwo + FOOTPRINT_THICKNESS,
     z: levelTwoPoint.y,
   });
 }
@@ -291,7 +296,7 @@ function addContainerBlock(
   context.samples.push({
     label: `${placement.key} roof`,
     x: point.x,
-    y: top,
+    y: top + FOOTPRINT_THICKNESS,
     z: point.y,
   });
 
@@ -301,7 +306,7 @@ function addContainerBlock(
       new THREE.BoxGeometry(insetWidth + 0.05, bandHeight, insetDepth + 0.05),
       material(PALETTE.boneShadow),
     );
-    band.position.set(point.x, y, point.y);
+    band.position.set(point.x, FOOTPRINT_THICKNESS + y, point.y);
     band.rotation.y = THREE.MathUtils.degToRad(placement.rotationDegrees);
     collectTerrainVisual(band, context);
     band.geometry.dispose();

@@ -72,10 +72,88 @@ export function createPlasterMaterial(): THREE.MeshStandardMaterial {
     context.lineTo(startX + random() * 42 - 21, startY + random() * 54 - 27);
     context.stroke();
   }
+  const plasterTexture = textureFromCanvas(canvas, 6, 4);
   return new THREE.MeshStandardMaterial({
-    map: textureFromCanvas(canvas, 4, 3),
+    map: plasterTexture,
+    bumpMap: plasterTexture,
+    bumpScale: 0.28,
     color: 0xf0e8dc,
     roughness: 0.98,
+  });
+}
+
+export function createRubbleFootprintMaterial(): THREE.MeshStandardMaterial {
+  const [canvas, context] = canvas2d(512);
+  const random = seededRandom(0xb45e5);
+  context.fillStyle = '#625f55';
+  context.fillRect(0, 0, 512, 512);
+
+  for (let index = 0; index < 9200; index += 1) {
+    const shade = 68 + Math.floor(random() * 78);
+    const warm = Math.floor(random() * 14);
+    context.fillStyle = `rgba(${shade + warm}, ${shade + Math.floor(warm * 0.6)}, ${shade - 8}, ${0.08 + random() * 0.34})`;
+    const radius = 0.35 + random() * 2.4;
+    context.beginPath();
+    context.arc(random() * 512, random() * 512, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  for (let stone = 0; stone < 180; stone += 1) {
+    const x = random() * 512;
+    const y = random() * 512;
+    const radius = 2 + random() * 9;
+    const sides = 4 + Math.floor(random() * 4);
+    context.fillStyle = `rgba(${92 + Math.floor(random() * 45)}, ${88 + Math.floor(random() * 38)}, ${76 + Math.floor(random() * 34)}, ${0.38 + random() * 0.42})`;
+    context.beginPath();
+    for (let side = 0; side < sides; side += 1) {
+      const angle = (side / sides) * Math.PI * 2;
+      const jitter = radius * (0.65 + random() * 0.5);
+      const px = x + Math.cos(angle) * jitter;
+      const py = y + Math.sin(angle) * jitter;
+      if (side === 0) context.moveTo(px, py);
+      else context.lineTo(px, py);
+    }
+    context.closePath();
+    context.fill();
+  }
+
+  for (let crack = 0; crack < 34; crack += 1) {
+    const x = random() * 512;
+    const y = random() * 512;
+    context.strokeStyle = `rgba(34, 32, 29, ${0.18 + random() * 0.22})`;
+    context.lineWidth = 0.5 + random() * 1.1;
+    context.beginPath();
+    context.moveTo(x, y);
+    context.lineTo(x + random() * 46 - 23, y + random() * 46 - 23);
+    context.lineTo(x + random() * 74 - 37, y + random() * 74 - 37);
+    context.stroke();
+  }
+
+  const texture = textureFromCanvas(canvas, 2.4, 2.4);
+  return new THREE.MeshStandardMaterial({
+    map: texture,
+    bumpMap: texture,
+    bumpScale: 0.12,
+    color: 0xd1c8b4,
+    roughness: 0.98,
+    metalness: 0,
+  });
+}
+
+export function createImageMaterial(
+  path: string,
+  emissiveIntensity = 0.18,
+): THREE.MeshStandardMaterial {
+  const texture = new THREE.TextureLoader().load(path);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return new THREE.MeshStandardMaterial({
+    map: texture,
+    emissive: 0xffffff,
+    emissiveMap: texture,
+    emissiveIntensity,
+    roughness: 0.82,
+    metalness: 0,
   });
 }
 
