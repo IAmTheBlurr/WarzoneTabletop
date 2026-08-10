@@ -6,6 +6,7 @@ import { InputManager } from './player/input';
 import { PlayerController } from './player/controller';
 import { createPackLaunchVelocity } from './player/jumppack';
 import {
+  runControlsSelfTest,
   runPhaseOneSelfTest,
   runPhaseFourSelfTest,
   runPhaseThreeSelfTest,
@@ -421,6 +422,7 @@ const testApi = {
     controller.releaseJump();
   },
   switchBody: (body: keyof typeof GAME.bodies) => controller.switchBody(body),
+  look: (movementX: number, movementY: number) => controller.look(movementX, movementY),
   colliders: () =>
     world.collidables.map((collider) => ({
       id: collider.id,
@@ -455,6 +457,9 @@ if (searchParams.get('selftest') === 'phase4') {
 }
 if (searchParams.get('selftest') === 'timing') {
   runTimingSelfTest();
+}
+if (searchParams.get('selftest') === 'controls') {
+  runControlsSelfTest(testApi);
 }
 updateBodyHud();
 requestAnimationFrame(render);

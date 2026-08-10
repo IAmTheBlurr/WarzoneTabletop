@@ -28,3 +28,7 @@ The in-app regression routes are `?selftest=phase1`, `phase2`, `phase3`, and `ph
 ## Frame-timing regression
 
 The renderer remains synchronized only to the display's uncapped `requestAnimationFrame` cadence; physics uses a separate 60 Hz fixed-step clock. The `?selftest=timing` regression verifies that 60, 30, 20, 15, and 10 rendered frames all advance exactly 60 physics steps and move the Guardsman exactly 4.50 units during one real second. Hidden-tab time is discarded on visibility changes rather than replayed as a catch-up spike.
+
+## Control-direction regression
+
+The `?selftest=controls` regression verifies camera-relative W/A/S/D directions and equal speeds, both Shift sprint modifiers, horizontal and vertical mouse-look direction, pitch limits, and the 1/2/3 body-selection mapping.

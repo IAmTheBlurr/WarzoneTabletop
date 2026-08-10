@@ -119,7 +119,9 @@ export class PlayerController {
     const rightAmount = Number(input.right) - Number(input.left);
 
     const forward = new THREE.Vector2(Math.sin(this.yaw), Math.cos(this.yaw));
-    const right = new THREE.Vector2(Math.cos(this.yaw), -Math.sin(this.yaw));
+    // The camera's local forward is -Z and is displayed at yaw + PI, so its
+    // visible right is the clockwise perpendicular of our +Z forward vector.
+    const right = new THREE.Vector2(-Math.cos(this.yaw), Math.sin(this.yaw));
     const wish = forward.multiplyScalar(forwardAmount).addScaledVector(right, rightAmount);
     if (wish.lengthSq() > 1) wish.normalize();
 
@@ -408,7 +410,7 @@ export class PlayerController {
     this.state = 'AIRBORNE';
   }
 
-  private look(movementX: number, movementY: number): void {
+  look(movementX: number, movementY: number): void {
     const sensitivity = 0.0018;
     this.yaw -= movementX * sensitivity;
     this.pitch -= movementY * sensitivity;

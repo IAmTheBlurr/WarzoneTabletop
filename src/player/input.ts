@@ -11,6 +11,16 @@ type JumpHandler = () => void;
 type LookHandler = (movementX: number, movementY: number) => void;
 type BodySwitchHandler = (hotkey: '1' | '2' | '3') => void;
 
+const BODY_HOTKEY_BY_CODE = {
+  Digit1: '1',
+  Digit2: '2',
+  Digit3: '3',
+} as const;
+
+export function bodyHotkeyFromCode(code: string): '1' | '2' | '3' | null {
+  return BODY_HOTKEY_BY_CODE[code as keyof typeof BODY_HOTKEY_BY_CODE] ?? null;
+}
+
 export class InputManager {
   private readonly held = new Set<string>();
   private readonly virtual = new Set<string>();
@@ -85,9 +95,8 @@ export class InputManager {
     if (!this.isPointerLocked()) return;
     this.held.add(event.code);
 
-    if (!event.repeat && /^Digit[123]$/.test(event.code)) {
-      this.bodySwitchHandler(event.code.slice(-1) as '1' | '2' | '3');
-    }
+    const bodyHotkey = bodyHotkeyFromCode(event.code);
+    if (!event.repeat && bodyHotkey) this.bodySwitchHandler(bodyHotkey);
 
     if (event.code === 'Space') {
       event.preventDefault();

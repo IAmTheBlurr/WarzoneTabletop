@@ -6,6 +6,7 @@ import {
   type StaticCollider,
 } from '../player/collision';
 import type { ControllerSnapshot } from '../player/controller';
+import { bodyHotkeyFromCode } from '../player/input';
 import { boardInchesToWorld } from '../world/layout';
 import { FixedStepClock } from '../simulation/fixedStepClock';
 
@@ -20,6 +21,7 @@ export interface TestApi {
   packPress(): void;
   packRelease(): void;
   switchBody(body: BodyId): void;
+  look(movementX: number, movementY: number): void;
   colliders(): Array<{
     id: string;
     min: [number, number, number];
@@ -686,6 +688,127 @@ export function runTimingSelfTest(): void {
   panel.dataset.status = passed === results.length ? 'passed' : 'failed';
   panel.innerHTML = `
     <p>Frame timing regression</p>
+    <h2>${passed}/${results.length} checks passed</h2>
+    <ol>${results
+      .map(
+        (result) => `
+          <li data-status="${result.passed ? 'passed' : 'failed'}">
+            <strong>${result.passed ? 'PASS' : 'FAIL'} — ${result.label}</strong>
+            <span>${result.detail}</span>
+          </li>`,
+      )
+      .join('')}</ol>`;
+  document.body.append(panel);
+}
+
+export function runControlsSelfTest(api: TestApi): void {
+  const results: TestResult[] = [];
+  api.clearInput();
+  api.switchBody('primaris');
+
+  const measureDirection = (code: string) => {
+    api.clearInput();
+    api.reset();
+    const before = api.snapshot();
+    api.setInput(code, true);
+    const after = api.step(0.5);
+    api.clearInput();
+    return {
+      dx: after.position[0] - before.position[0],
+      dz: after.position[2] - before.position[2],
+      speed: Math.hypot(after.velocity[0], after.velocity[2]),
+    };
+  };
+
+  const forward = measureDirection('KeyW');
+  const back = measureDirection('KeyS');
+  const left = measureDirection('KeyA');
+  const right = measureDirection('KeyD');
+  results.push({
+    label: 'WASD camera-relative directions',
+    detail: `W Δz ${forward.dz.toFixed(2)} · S Δz ${back.dz.toFixed(2)} · A Δx ${left.dx.toFixed(2)} · D Δx ${right.dx.toFixed(2)}`,
+    passed:
+      forward.dz > 0 &&
+      back.dz < 0 &&
+      left.dx > 0 &&
+      right.dx < 0 &&
+      closeTo(forward.dx, 0, 0.01) &&
+      closeTo(back.dx, 0, 0.01) &&
+      closeTo(left.dz, 0, 0.01) &&
+      closeTo(right.dz, 0, 0.01),
+  });
+
+  const cardinalSpeeds = [forward.speed, back.speed, left.speed, right.speed];
+  results.push({
+    label: 'Equal cardinal movement speed',
+    detail: cardinalSpeeds.map((speed) => speed.toFixed(2)).join(' / '),
+    passed: cardinalSpeeds.every((speed) =>
+      closeTo(speed, GAME.bodies.primaris.walkSpeed, 0.02),
+    ),
+  });
+
+  const sprintSpeeds = ['ShiftLeft', 'ShiftRight'].map((shiftCode) => {
+    api.reset();
+    api.setInput('KeyW', true);
+    api.setInput(shiftCode, true);
+    const snapshot = api.step(1);
+    api.clearInput();
+    return Math.hypot(snapshot.velocity[0], snapshot.velocity[2]);
+  });
+  results.push({
+    label: 'Left and right Shift sprint modifiers',
+    detail: `left ${sprintSpeeds[0]?.toFixed(2)} · right ${sprintSpeeds[1]?.toFixed(2)} u/s`,
+    passed: sprintSpeeds.every((speed) =>
+      closeTo(speed, GAME.bodies.primaris.sprintSpeed, 0.02),
+    ),
+  });
+
+  api.reset();
+  api.look(100, -100);
+  const rightAndUp = api.snapshot();
+  api.setInput('KeyW', true);
+  const turnedMovement = api.step(0.5);
+  api.clearInput();
+  results.push({
+    label: 'Mouse look axes and movement alignment',
+    detail: `right yaw ${rightAndUp.yawDegrees.toFixed(1)}° · up pitch ${rightAndUp.pitchDegrees.toFixed(1)}° · forward x ${turnedMovement.position[0].toFixed(2)}`,
+    passed:
+      rightAndUp.yawDegrees < 0 &&
+      rightAndUp.pitchDegrees > 0 &&
+      turnedMovement.position[0] < GAME.spawn.feetPosition[0],
+  });
+
+  api.reset();
+  api.look(0, -100000);
+  const upperPitch = api.snapshot().pitchDegrees;
+  api.look(0, 200000);
+  const lowerPitch = api.snapshot().pitchDegrees;
+  results.push({
+    label: 'Mouse pitch safety limits',
+    detail: `${lowerPitch.toFixed(1)}° to ${upperPitch.toFixed(1)}°`,
+    passed: upperPitch > 89 && upperPitch < 90 && lowerPitch < -89 && lowerPitch > -90,
+  });
+
+  const bodyHotkeys = ['Digit1', 'Digit2', 'Digit3'].map(bodyHotkeyFromCode);
+  results.push({
+    label: 'Body-selection hotkeys',
+    detail: bodyHotkeys.map((hotkey, index) => `${index + 1}→${hotkey}`).join(' · '),
+    passed:
+      bodyHotkeys.join('') === '123' &&
+      GAME.bodies.guardsman.hotkey === '1' &&
+      GAME.bodies.sister.hotkey === '2' &&
+      GAME.bodies.primaris.hotkey === '3',
+  });
+
+  api.reset();
+  api.clearInput();
+  const panel = document.createElement('section');
+  const passed = results.filter((result) => result.passed).length;
+  panel.id = 'self-test-report';
+  panel.className = 'self-test-report';
+  panel.dataset.status = passed === results.length ? 'passed' : 'failed';
+  panel.innerHTML = `
+    <p>Keyboard and mouse control regression</p>
     <h2>${passed}/${results.length} checks passed</h2>
     <ol>${results
       .map(
