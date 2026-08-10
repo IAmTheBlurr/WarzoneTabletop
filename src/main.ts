@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import './styles.css';
 import { FootstepAudio } from './audio/footsteps';
-import { FIXED_TIMESTEP, GAME, MAX_FRAME_DT } from './constants';
+import { FIXED_TIMESTEP, GAME } from './constants';
 import { InputManager } from './player/input';
 import { PlayerController } from './player/controller';
 import { createPackLaunchVelocity } from './player/jumppack';
@@ -9,11 +9,13 @@ import {
   runPhaseOneSelfTest,
   runPhaseFourSelfTest,
   runPhaseThreeSelfTest,
+  runTimingSelfTest,
   runPhaseTwoSelfTest,
 } from './testing/selftest';
 import { createBoardWorld } from './world/board';
 import { createFootprints } from './world/footprints';
 import { createTerrain } from './world/terrain';
+import { FixedStepClock } from './simulation/fixedStepClock';
 
 function requiredElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -122,7 +124,7 @@ function installPackTestArena(height: number, includeWall: boolean) {
 }
 
 let debugVisible = searchParams.has('debug');
-let accumulator = 0;
+const physicsClock = new FixedStepClock(FIXED_TIMESTEP);
 let previousTime = performance.now();
 let frameCount = 0;
 let fpsSampleStarted = previousTime;
@@ -360,14 +362,9 @@ function updatePresentation(dt: number, now: number): void {
 
 function render(now: number): void {
   requestAnimationFrame(render);
-  const frameDt = Math.min((now - previousTime) / 1000, MAX_FRAME_DT);
+  const frameDt = Math.max((now - previousTime) / 1000, 0);
   previousTime = now;
-  accumulator += frameDt;
-
-  while (accumulator >= FIXED_TIMESTEP) {
-    controller.update(FIXED_TIMESTEP);
-    accumulator -= FIXED_TIMESTEP;
-  }
+  physicsClock.advance(frameDt, (dt) => controller.update(dt));
   if (cornerPreview) {
     camera.position.set(-178, 152, -224);
     camera.lookAt(0, 9, 0);
@@ -393,6 +390,13 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+document.addEventListener('visibilitychange', () => {
+  // requestAnimationFrame pauses in a hidden tab. Reset the wall-clock origin
+  // instead of treating inactive-tab time as a frame that physics must replay.
+  previousTime = performance.now();
+  physicsClock.reset();
 });
 
 const testApi = {
@@ -448,6 +452,9 @@ if (searchParams.get('selftest') === 'phase3') {
 }
 if (searchParams.get('selftest') === 'phase4') {
   runPhaseFourSelfTest(testApi);
+}
+if (searchParams.get('selftest') === 'timing') {
+  runTimingSelfTest();
 }
 updateBodyHud();
 requestAnimationFrame(render);

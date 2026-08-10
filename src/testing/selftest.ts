@@ -7,6 +7,7 @@ import {
 } from '../player/collision';
 import type { ControllerSnapshot } from '../player/controller';
 import { boardInchesToWorld } from '../world/layout';
+import { FixedStepClock } from '../simulation/fixedStepClock';
 
 export interface TestApi {
   snapshot(): ControllerSnapshot;
@@ -629,6 +630,62 @@ export function runPhaseFourSelfTest(api: TestApi): void {
   panel.dataset.status = passed === results.length ? 'passed' : 'failed';
   panel.innerHTML = `
     <p>Phase 4 measured acceptance</p>
+    <h2>${passed}/${results.length} checks passed</h2>
+    <ol>${results
+      .map(
+        (result) => `
+          <li data-status="${result.passed ? 'passed' : 'failed'}">
+            <strong>${result.passed ? 'PASS' : 'FAIL'} — ${result.label}</strong>
+            <span>${result.detail}</span>
+          </li>`,
+      )
+      .join('')}</ol>`;
+  document.body.append(panel);
+}
+
+export function runTimingSelfTest(): void {
+  const results: TestResult[] = [];
+  const schedules = [60, 30, 20, 15, 10];
+  const measurements = schedules.map((renderFps) => {
+    const clock = new FixedStepClock(FIXED_TIMESTEP);
+    let simulationSteps = 0;
+    let distance = 0;
+    for (let frame = 0; frame < renderFps; frame += 1) {
+      clock.advance(1 / renderFps, (dt) => {
+        simulationSteps += 1;
+        distance += GAME.bodies.guardsman.walkSpeed * dt;
+      });
+    }
+    return { renderFps, simulationSteps, distance };
+  });
+
+  results.push({
+    label: 'Render-rate-independent simulation clock',
+    detail: measurements
+      .map((measurement) => `${measurement.renderFps}fps→${measurement.simulationSteps} steps`)
+      .join(' · '),
+    passed: measurements.every(
+      (measurement) => measurement.simulationSteps === GAME.physics.fixedTimestepHz,
+    ),
+  });
+
+  results.push({
+    label: 'Render-rate-independent movement distance',
+    detail: measurements
+      .map((measurement) => `${measurement.renderFps}fps→${measurement.distance.toFixed(2)}u`)
+      .join(' · '),
+    passed: measurements.every((measurement) =>
+      closeTo(measurement.distance, GAME.bodies.guardsman.walkSpeed, 0.001),
+    ),
+  });
+
+  const panel = document.createElement('section');
+  const passed = results.filter((result) => result.passed).length;
+  panel.id = 'self-test-report';
+  panel.className = 'self-test-report';
+  panel.dataset.status = passed === results.length ? 'passed' : 'failed';
+  panel.innerHTML = `
+    <p>Frame timing regression</p>
     <h2>${passed}/${results.length} checks passed</h2>
     <ol>${results
       .map(

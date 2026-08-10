@@ -24,3 +24,7 @@ Measured in Chromium against the fixed 60 Hz controller on 2026-08-09.
 - Pack steering input has no effect; a wall impact zeros horizontal velocity; an off-table flight finds no ground, never retro-burns, and respawns below y = −175.
 
 The in-app regression routes are `?selftest=phase1`, `phase2`, `phase3`, and `phase4`. They render their measured results over the running scene.
+
+## Frame-timing regression
+
+The renderer remains synchronized only to the display's uncapped `requestAnimationFrame` cadence; physics uses a separate 60 Hz fixed-step clock. The `?selftest=timing` regression verifies that 60, 30, 20, 15, and 10 rendered frames all advance exactly 60 physics steps and move the Guardsman exactly 4.50 units during one real second. Hidden-tab time is discarded on visibility changes rather than replayed as a catch-up spike.
