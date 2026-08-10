@@ -33,6 +33,15 @@ export interface TestApi {
     colliders: number;
     terrainMeshes: number;
     groundTargetNames: string[];
+    roomObjects: number;
+    tabletopDetails: number;
+    environmentNames: string[];
+    renderGroups: Array<{
+      name: string;
+      meshes: number;
+      lines: number;
+      shadowCasters: number;
+    }>;
   };
   installPackTestArena(height: number, includeWall: boolean): {
     x: number;
@@ -70,12 +79,12 @@ export function runPhaseOneSelfTest(api: TestApi): void {
 
   api.setInput('KeyW', true);
   snapshot = api.step(2);
-  const walkSpeed = Math.hypot(snapshot.velocity[0], snapshot.velocity[2]);
+  const runSpeed = Math.hypot(snapshot.velocity[0], snapshot.velocity[2]);
   api.clearInput();
   results.push({
-    label: 'Guardsman walk speed',
-    detail: `${walkSpeed.toFixed(2)} u/s / target ${GAME.bodies.guardsman.walkSpeed.toFixed(2)}`,
-    passed: closeTo(walkSpeed, GAME.bodies.guardsman.walkSpeed, 0.02),
+    label: 'Guardsman run speed',
+    detail: `${runSpeed.toFixed(2)} u/s / target ${GAME.bodies.guardsman.runSpeed.toFixed(2)}`,
+    passed: closeTo(runSpeed, GAME.bodies.guardsman.runSpeed, 0.02),
   });
 
   api.reset();
@@ -86,10 +95,14 @@ export function runPhaseOneSelfTest(api: TestApi): void {
   api.clearInput();
   results.push({
     label: 'Sprint ratio',
-    detail: `${sprintSpeed.toFixed(2)} u/s / ${(sprintSpeed / walkSpeed).toFixed(2)}× walk`,
+    detail: `${sprintSpeed.toFixed(2)} u/s / ${(sprintSpeed / runSpeed).toFixed(2)}× run`,
     passed:
       closeTo(sprintSpeed, GAME.bodies.guardsman.sprintSpeed, 0.02) &&
-      closeTo(sprintSpeed / walkSpeed, 1.8, 0.01),
+      closeTo(
+        sprintSpeed / runSpeed,
+        GAME.bodies.guardsman.sprintSpeed / GAME.bodies.guardsman.runSpeed,
+        0.01,
+      ),
   });
 
   api.reset();
@@ -211,15 +224,17 @@ export function runPhaseTwoSelfTest(api: TestApi): void {
   const sister = measureBody(api, 'sister');
   const primaris = measureBody(api, 'primaris');
   results.push({
-    label: 'Distinct handling identities',
-    detail: `0.1s accel G/S/P ${guardsman.earlySpeed.toFixed(2)}/${sister.earlySpeed.toFixed(2)}/${primaris.earlySpeed.toFixed(2)} · tops ${guardsman.topSpeed.toFixed(2)}/${sister.topSpeed.toFixed(2)}/${primaris.topSpeed.toFixed(2)}`,
+    label: 'Instant response and distinct run identities',
+    detail: `first response G/S/P ${guardsman.earlySpeed.toFixed(2)}/${sister.earlySpeed.toFixed(2)}/${primaris.earlySpeed.toFixed(2)} · stops ${guardsman.stopSpeed.toFixed(2)}/${sister.stopSpeed.toFixed(2)}/${primaris.stopSpeed.toFixed(2)}`,
     passed:
-      guardsman.earlySpeed > sister.earlySpeed &&
-      sister.earlySpeed > primaris.earlySpeed &&
+      closeTo(guardsman.earlySpeed, GAME.bodies.guardsman.runSpeed, 0.02) &&
+      closeTo(sister.earlySpeed, GAME.bodies.sister.runSpeed, 0.02) &&
+      closeTo(primaris.earlySpeed, GAME.bodies.primaris.runSpeed, 0.02) &&
       guardsman.topSpeed < sister.topSpeed &&
       sister.topSpeed < primaris.topSpeed &&
-      guardsman.stopSpeed < sister.stopSpeed &&
-      sister.stopSpeed < primaris.stopSpeed,
+      closeTo(guardsman.stopSpeed, 0, 0.01) &&
+      closeTo(sister.stopSpeed, 0, 0.01) &&
+      closeTo(primaris.stopSpeed, 0, 0.01),
   });
 
   const guardPeak = measureJump(api, 'guardsman');
@@ -655,7 +670,7 @@ export function runTimingSelfTest(): void {
     for (let frame = 0; frame < renderFps; frame += 1) {
       clock.advance(1 / renderFps, (dt) => {
         simulationSteps += 1;
-        distance += GAME.bodies.guardsman.walkSpeed * dt;
+        distance += GAME.bodies.guardsman.runSpeed * dt;
       });
     }
     return { renderFps, simulationSteps, distance };
@@ -677,7 +692,7 @@ export function runTimingSelfTest(): void {
       .map((measurement) => `${measurement.renderFps}fps→${measurement.distance.toFixed(2)}u`)
       .join(' · '),
     passed: measurements.every((measurement) =>
-      closeTo(measurement.distance, GAME.bodies.guardsman.walkSpeed, 0.001),
+      closeTo(measurement.distance, GAME.bodies.guardsman.runSpeed, 0.001),
     ),
   });
 
@@ -743,7 +758,7 @@ export function runControlsSelfTest(api: TestApi): void {
     label: 'Equal cardinal movement speed',
     detail: cardinalSpeeds.map((speed) => speed.toFixed(2)).join(' / '),
     passed: cardinalSpeeds.every((speed) =>
-      closeTo(speed, GAME.bodies.primaris.walkSpeed, 0.02),
+      closeTo(speed, GAME.bodies.primaris.runSpeed, 0.02),
     ),
   });
 
@@ -809,6 +824,62 @@ export function runControlsSelfTest(api: TestApi): void {
   panel.dataset.status = passed === results.length ? 'passed' : 'failed';
   panel.innerHTML = `
     <p>Keyboard and mouse control regression</p>
+    <h2>${passed}/${results.length} checks passed</h2>
+    <ol>${results
+      .map(
+        (result) => `
+          <li data-status="${result.passed ? 'passed' : 'failed'}">
+            <strong>${result.passed ? 'PASS' : 'FAIL'} — ${result.label}</strong>
+            <span>${result.detail}</span>
+          </li>`,
+      )
+      .join('')}</ol>`;
+  document.body.append(panel);
+}
+
+export function runEnvironmentSelfTest(api: TestApi): void {
+  const results: TestResult[] = [];
+  const stats = api.worldStats();
+  results.push({
+    label: 'Physically modeled home-den surround',
+    detail: `${stats.roomObjects} room objects`,
+    passed:
+      stats.roomObjects >= 80 &&
+      stats.environmentNames.includes('full-scale-home-den'),
+  });
+  results.push({
+    label: 'Miniature-scale surface density',
+    detail: `${stats.tabletopDetails} paint, scratch, flock, stone, and hobby details`,
+    passed:
+      stats.tabletopDetails >= 350 &&
+      stats.environmentNames.includes('miniature-scale-surface-and-hobby-details'),
+  });
+
+  const primarisRunCrossing =
+    GAME.board.worldUnits.width / GAME.bodies.primaris.runSpeed;
+  const primarisSprintCrossing =
+    GAME.board.worldUnits.width / GAME.bodies.primaris.sprintSpeed;
+  results.push({
+    label: 'Primaris traversal targets',
+    detail: `run ${primarisRunCrossing.toFixed(2)}s · sprint ${primarisSprintCrossing.toFixed(2)}s across 44in`,
+    passed:
+      closeTo(primarisRunCrossing, 22.35, 0.02) &&
+      closeTo(primarisSprintCrossing, 13.04, 0.02),
+  });
+
+  results.push({
+    label: 'Presentation-neutral camera configuration',
+    detail: 'fixed base FOV · no locomotion or flight camera offsets',
+    passed: !('packFlightFovKickDegrees' in GAME.camera),
+  });
+
+  const panel = document.createElement('section');
+  const passed = results.filter((result) => result.passed).length;
+  panel.id = 'self-test-report';
+  panel.className = 'self-test-report';
+  panel.dataset.status = passed === results.length ? 'passed' : 'failed';
+  panel.innerHTML = `
+    <p>Environment and locomotion regression</p>
     <h2>${passed}/${results.length} checks passed</h2>
     <ol>${results
       .map(

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GAME } from '../constants';
 import type { StaticCollider } from '../player/collision';
 import {
@@ -27,6 +28,12 @@ interface BuildContext {
   readonly groundGroup: THREE.Group;
   readonly collidables: StaticCollider[];
   readonly samples: TerrainGroundSample[];
+  readonly edgeGeometries: THREE.BufferGeometry[];
+  readonly contactShadowGeometries: THREE.BufferGeometry[];
+  readonly visualBatches: Map<
+    string,
+    { material: THREE.Material; geometries: THREE.BufferGeometry[] }
+  >;
 }
 
 const MASSING = {
@@ -65,18 +72,40 @@ function localToWorld(
   );
 }
 
-function addEdgeHighlight(mesh: THREE.Mesh, group: THREE.Group): void {
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(mesh.geometry, 28),
-    new THREE.LineBasicMaterial({
-      color: 0xe2d6bf,
-      transparent: true,
-      opacity: 0.25,
-    }),
-  );
-  edges.position.copy(mesh.position);
-  edges.rotation.copy(mesh.rotation);
-  group.add(edges);
+function collectEdgeHighlight(mesh: THREE.Mesh, context: BuildContext): void {
+  mesh.updateMatrix();
+  const edges = new THREE.EdgesGeometry(mesh.geometry, 28);
+  edges.applyMatrix4(mesh.matrix);
+  context.edgeGeometries.push(edges);
+}
+
+function collectTerrainVisual(mesh: THREE.Mesh, context: BuildContext): void {
+  mesh.updateMatrix();
+  const key = (mesh.material as THREE.Material).uuid;
+  const batch = context.visualBatches.get(key) ?? {
+    material: mesh.material as THREE.Material,
+    geometries: [],
+  };
+  const geometry = mesh.geometry.clone();
+  geometry.applyMatrix4(mesh.matrix);
+  batch.geometries.push(geometry);
+  context.visualBatches.set(key, batch);
+}
+
+function collectContactShadow(
+  mesh: THREE.Mesh,
+  width: number,
+  depth: number,
+  context: BuildContext,
+): void {
+  const shadow = new THREE.PlaneGeometry(width + 1.4, depth + 1.4);
+  shadow.rotateX(-Math.PI / 2);
+  const transform = new THREE.Object3D();
+  transform.position.set(mesh.position.x + 0.34, 0.041, mesh.position.z + 0.52);
+  transform.rotation.y = mesh.rotation.y;
+  transform.updateMatrix();
+  shadow.applyMatrix4(transform.matrix);
+  context.contactShadowGeometries.push(shadow);
 }
 
 function addBox(
@@ -105,7 +134,13 @@ function addBox(
   context.groundGroup.add(mesh);
   mesh.updateMatrixWorld(true);
   context.collidables.push({ id: mesh.name, bounds: new THREE.Box3().setFromObject(mesh) });
-  addEdgeHighlight(mesh, context.group);
+  collectEdgeHighlight(mesh, context);
+  collectTerrainVisual(mesh, context);
+  if (bottomY === 0) collectContactShadow(mesh, width, depth, context);
+  // Keep the authored pieces as exact ground-ray targets while rendering a
+  // handful of material batches. Three's raycaster intentionally still tests
+  // invisible objects, so collision fidelity is unchanged.
+  mesh.visible = false;
   return mesh;
 }
 
@@ -268,7 +303,8 @@ function addContainerBlock(
     );
     band.position.set(point.x, y, point.y);
     band.rotation.y = THREE.MathUtils.degToRad(placement.rotationDegrees);
-    context.group.add(band);
+    collectTerrainVisual(band, context);
+    band.geometry.dispose();
   }
 }
 
@@ -305,6 +341,9 @@ export function createTerrain(
     groundGroup,
     collidables,
     samples: [],
+    edgeGeometries: [],
+    contactShadowGeometries: [],
+    visualBatches: new Map(),
   };
   const beforeCount = groundGroup.children.length;
 
@@ -323,6 +362,49 @@ export function createTerrain(
     }
   }
 
+  const mergedContactShadows = mergeGeometries(context.contactShadowGeometries, false);
+  if (mergedContactShadows) {
+    const contactShadows = new THREE.Mesh(
+      mergedContactShadows,
+      new THREE.MeshBasicMaterial({
+        color: 0x11130e,
+        transparent: true,
+        opacity: 0.13,
+        depthWrite: false,
+      }),
+    );
+    contactShadows.name = 'baked-terrain-contact-shadows';
+    contactShadows.renderOrder = 2;
+    group.add(contactShadows);
+  }
+
+  let visualBatchIndex = 0;
+  for (const batch of context.visualBatches.values()) {
+    const geometry = mergeGeometries(batch.geometries, false);
+    if (!geometry) continue;
+    const mesh = new THREE.Mesh(geometry, batch.material);
+    mesh.name = `merged-terrain-material-${visualBatchIndex}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    visualBatchIndex += 1;
+    batch.geometries.forEach((source) => source.dispose());
+  }
+
+  const mergedEdges = mergeGeometries(context.edgeGeometries, false);
+  if (mergedEdges) {
+    const highlights = new THREE.LineSegments(
+      mergedEdges,
+      new THREE.LineBasicMaterial({
+        color: 0xe2d6bf,
+        transparent: true,
+        opacity: 0.25,
+      }),
+    );
+    highlights.name = 'merged-terrain-edge-highlights';
+    group.add(highlights);
+  }
+
   root.updateMatrixWorld(true);
   return {
     group,
@@ -330,4 +412,3 @@ export function createTerrain(
     terrainMeshCount: groundGroup.children.length - beforeCount,
   };
 }
-

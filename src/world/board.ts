@@ -1,10 +1,19 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GAME } from '../constants';
 import type { CollisionWorld, StaticCollider } from '../player/collision';
+import { createBattleMatMaterial } from './materials';
 import { PALETTE } from './palette';
+import { addDenRoom } from './room';
+import { addTabletopDetails } from './tabletopDetails';
 
 export interface BoardWorld extends CollisionWorld {
   readonly sceneRoot: THREE.Group;
+  readonly environmentStats: {
+    roomObjects: number;
+    tabletopDetails: number;
+  };
+  updateEnvironment(timeSeconds: number): void;
 }
 
 function createBox(
@@ -22,23 +31,24 @@ function createBox(
   return mesh;
 }
 
-function addRoomDressing(root: THREE.Group): void {
-  const floorMaterial = new THREE.MeshStandardMaterial({
-    color: 0x171419,
-    roughness: 0.96,
-    side: THREE.DoubleSide,
-  });
-  const roomFloor = new THREE.Mesh(new THREE.PlaneGeometry(1100, 1100), floorMaterial);
-  roomFloor.rotation.x = -Math.PI / 2;
-  roomFloor.position.y = GAME.spawn.roomFloorYUnits;
-  roomFloor.receiveShadow = true;
-  roomFloor.name = 'visual-room-floor--not-raycastable';
-  root.add(roomFloor);
-
-  const legMaterial = new THREE.MeshStandardMaterial({
+function addTableStructure(root: THREE.Group): void {
+  const material = new THREE.MeshStandardMaterial({
     color: PALETTE.tableWood,
     roughness: 0.72,
   });
+  const geometries: THREE.BufferGeometry[] = [];
+  const addBoxGeometry = (
+    width: number,
+    height: number,
+    depth: number,
+    x: number,
+    y: number,
+    z: number,
+  ): void => {
+    const geometry = new THREE.BoxGeometry(width, height, depth);
+    geometry.translate(x, y, z);
+    geometries.push(geometry);
+  };
   const legPositions: Array<readonly [number, number]> = [
     [-125, -168],
     [125, -168],
@@ -46,47 +56,74 @@ function addRoomDressing(root: THREE.Group): void {
     [125, 168],
   ];
   for (const [x, z] of legPositions) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(13, 176, 13), legMaterial);
-    leg.position.set(x, -90, z);
-    leg.castShadow = true;
-    leg.receiveShadow = true;
-    root.add(leg);
+    addBoxGeometry(13, 176, 13, x, -90, z);
   }
 
-  const shelfMaterial = new THREE.MeshStandardMaterial({
-    color: 0x262027,
-    roughness: 0.9,
-  });
-  for (let index = 0; index < 4; index += 1) {
-    const shelf = new THREE.Mesh(
-      new THREE.BoxGeometry(90, 140 + index * 12, 38),
-      shelfMaterial,
-    );
-    shelf.position.set(-290 + index * 190, -108 + index * 3, 360 + index * 28);
-    root.add(shelf);
-  }
+  addBoxGeometry(
+    GAME.board.worldUnits.width + 22,
+    8,
+    3,
+    0,
+    -7,
+    GAME.board.worldUnits.depth / 2 + 8,
+  );
+  addBoxGeometry(
+    GAME.board.worldUnits.width + 22,
+    8,
+    3,
+    0,
+    -7,
+    -GAME.board.worldUnits.depth / 2 - 8,
+  );
+  addBoxGeometry(
+    3,
+    8,
+    GAME.board.worldUnits.depth + 22,
+    GAME.board.worldUnits.width / 2 + 8,
+    -7,
+    0,
+  );
+  addBoxGeometry(
+    3,
+    8,
+    GAME.board.worldUnits.depth + 22,
+    -GAME.board.worldUnits.width / 2 - 8,
+    -7,
+    0,
+  );
+
+  const geometry = mergeGeometries(geometries, false);
+  if (!geometry) return;
+  const structure = new THREE.Mesh(geometry, material);
+  structure.name = 'merged-table-legs-and-aprons';
+  structure.receiveShadow = true;
+  root.add(structure);
+  geometries.forEach((source) => source.dispose());
 }
 
 export function createBoardWorld(scene: THREE.Scene): BoardWorld {
   scene.background = new THREE.Color(PALETTE.roomFog);
-  scene.fog = new THREE.Fog(PALETTE.roomFog, 185, 720);
+  scene.fog = new THREE.Fog(PALETTE.roomFog, 430, 1080);
 
   const root = new THREE.Group();
   root.name = 'warzone-tabletop';
   scene.add(root);
+  const den = addDenRoom(root);
 
   const groundRaycastGroup = new THREE.Group();
   groundRaycastGroup.name = 'ground-raycast-group';
   root.add(groundRaycastGroup);
   const collidables: StaticCollider[] = [];
 
-  const mat = createBox(
-    GAME.board.worldUnits.width,
-    GAME.board.matThicknessWorldUnits,
-    GAME.board.worldUnits.depth,
-    PALETTE.matGreen,
-    0.92,
+  const mat = new THREE.Mesh(
+    new THREE.BoxGeometry(
+      GAME.board.worldUnits.width,
+      GAME.board.matThicknessWorldUnits,
+      GAME.board.worldUnits.depth,
+    ),
+    createBattleMatMaterial(),
   );
+  mat.receiveShadow = true;
   mat.position.y = -GAME.board.matThicknessWorldUnits / 2;
   mat.name = 'battle-mat';
   groundRaycastGroup.add(mat);
@@ -121,16 +158,22 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
     roughness: 0.5,
   });
   const pipGeometry = new THREE.SphereGeometry(0.56, 10, 6);
+  const pips = new THREE.InstancedMesh(pipGeometry, pipMaterial, 7);
+  pips.name = 'instanced-scale-die-pips';
+  const pipTransform = new THREE.Object3D();
+  let pipIndex = 0;
   const topY = tableTop + dieSize - 0.1;
   for (const [offsetX, offsetZ] of [
     [-2.1, -2.1],
     [0, 0],
     [2.1, 2.1],
   ] as const) {
-    const pip = new THREE.Mesh(pipGeometry, pipMaterial);
-    pip.position.set(dieX + offsetX, topY, dieZ + offsetZ);
-    pip.scale.y = 0.34;
-    root.add(pip);
+    pipTransform.position.set(dieX + offsetX, topY, dieZ + offsetZ);
+    pipTransform.rotation.set(0, 0, 0);
+    pipTransform.scale.set(1, 0.34, 1);
+    pipTransform.updateMatrix();
+    pips.setMatrixAt(pipIndex, pipTransform.matrix);
+    pipIndex += 1;
   }
   for (const [offsetX, offsetY] of [
     [-2.1, -2.1],
@@ -138,15 +181,19 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
     [-2.1, 2.1],
     [2.1, 2.1],
   ] as const) {
-    const pip = new THREE.Mesh(pipGeometry, pipMaterial);
-    pip.position.set(
+    pipTransform.position.set(
       dieX + offsetX,
       tableTop + dieSize / 2 + offsetY,
       dieZ - dieSize / 2 + 0.1,
     );
-    pip.scale.z = 0.34;
-    root.add(pip);
+    pipTransform.rotation.set(0, 0, 0);
+    pipTransform.scale.set(1, 1, 0.34);
+    pipTransform.updateMatrix();
+    pips.setMatrixAt(pipIndex, pipTransform.matrix);
+    pipIndex += 1;
   }
+  pips.instanceMatrix.needsUpdate = true;
+  root.add(pips);
 
   const grid = new THREE.GridHelper(
     GAME.board.worldUnits.depth,
@@ -175,7 +222,8 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
   boardBorder.position.y = -GAME.board.matThicknessWorldUnits / 2;
   root.add(boardBorder);
 
-  addRoomDressing(root);
+  addTableStructure(root);
+  const tabletopDetailCount = addTabletopDetails(root);
 
   const hemisphere = new THREE.HemisphereLight(0x9eb0bf, 0x241b18, 1.6);
   scene.add(hemisphere);
@@ -184,7 +232,7 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
   key.position.set(-120, 220, -90);
   key.target.position.set(0, 0, 20);
   key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.mapSize.set(256, 256);
   key.shadow.camera.left = -180;
   key.shadow.camera.right = 180;
   key.shadow.camera.top = 220;
@@ -206,5 +254,10 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
     sceneRoot: root,
     collidables,
     groundRaycastGroup,
+    environmentStats: {
+      roomObjects: den.objectCount,
+      tabletopDetails: tabletopDetailCount,
+    },
+    updateEnvironment: den.update,
   };
 }

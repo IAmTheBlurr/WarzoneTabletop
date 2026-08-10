@@ -128,15 +128,23 @@ export class PlayerController {
     const packCommitted =
       this.state === 'PACK_BALLISTIC' || this.state === 'RETRO_BURN';
     if (!packCommitted) {
-      const targetSpeed = input.sprint ? this.body.sprintSpeed : this.body.walkSpeed;
+      const targetSpeed = input.sprint ? this.body.sprintSpeed : this.body.runSpeed;
       const target = wish.multiplyScalar(targetSpeed);
-      const horizontal = new THREE.Vector2(this.velocity.x, this.velocity.z);
-      const accelerating = target.lengthSq() > horizontal.lengthSq();
-      let rate = accelerating ? this.body.accelUnitsPerSec2 : this.body.decelUnitsPerSec2;
-      if (this.state === 'AIRBORNE') rate *= this.body.airControlMultiplier;
-      const nextHorizontal = moveTowardsVector(horizontal, target, rate * dt);
-      this.velocity.x = nextHorizontal.x;
-      this.velocity.z = nextHorizontal.y;
+      if (this.state === 'GROUNDED') {
+        // Ground locomotion is intentionally immediate. Weight comes from the
+        // body scale, impacts, and audio—not input latency or camera tricks.
+        this.velocity.x = target.x;
+        this.velocity.z = target.y;
+      } else {
+        const horizontal = new THREE.Vector2(this.velocity.x, this.velocity.z);
+        const accelerating = target.lengthSq() > horizontal.lengthSq();
+        const rate =
+          (accelerating ? this.body.accelUnitsPerSec2 : this.body.decelUnitsPerSec2) *
+          this.body.airControlMultiplier;
+        const nextHorizontal = moveTowardsVector(horizontal, target, rate * dt);
+        this.velocity.x = nextHorizontal.x;
+        this.velocity.z = nextHorizontal.y;
+      }
     }
 
     const preStepGroundDistance = centerGroundDistance(this.pos, this.world);

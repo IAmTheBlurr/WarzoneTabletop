@@ -21,7 +21,7 @@ export class FootstepAudio {
     if (!context || context.state !== 'running' || !enabled) return;
     const horizontalSpeed = Math.hypot(snapshot.velocity[0], snapshot.velocity[2]);
     const body = GAME.bodies[snapshot.body];
-    if (snapshot.state !== 'GROUNDED' || horizontalSpeed < body.walkSpeed * 0.2) {
+    if (snapshot.state !== 'GROUNDED' || horizontalSpeed < body.runSpeed * 0.2) {
       this.nextStepAt = context.currentTime;
       return;
     }
@@ -54,4 +54,3 @@ export class FootstepAudio {
     oscillator.stop(now + profile.duration);
   }
 }
-

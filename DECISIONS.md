@@ -23,6 +23,7 @@ This file records judgment calls and interpretations. Numeric gameplay values st
 - The example layout's long lines overlap the corner large rectangles when converted literally. They are shifted to `(8, 27)` and `(-8, -27)` board inches, and the short lines are placed as two rotationally symmetric pairs. The center-heavy composition and 180-degree symmetry are preserved.
 - Large ruin wall tops extend one board inch above their highest floor, using the documented 1-board-inch line height as the visual parapet increment. Walkable slab tops remain exactly 16 and 32 units and slab thickness remains exactly 0.8.
 - Standard ruin openings are 6.5 units wide. The two polygon ruins deliberately use the permitted 2.5-unit small-body gap so the body-width traversal contrast exists on the final board.
+- Literal walk speeds were replaced by immediate-response combat run / sprint speeds after measured real-scale traversal proved mathematically correct but perceptually too slow in first person. Camera bob, sway, landing compression, and speed-based FOV changes remain deliberately absent; miniature-scale surface detail and environmental reference objects provide motion cues instead.
 
 ## Jump-pack timing reconciliation
 

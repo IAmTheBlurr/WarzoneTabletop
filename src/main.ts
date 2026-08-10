@@ -7,6 +7,7 @@ import { PlayerController } from './player/controller';
 import { createPackLaunchVelocity } from './player/jumppack';
 import {
   runControlsSelfTest,
+  runEnvironmentSelfTest,
   runPhaseOneSelfTest,
   runPhaseFourSelfTest,
   runPhaseThreeSelfTest,
@@ -46,8 +47,13 @@ const camera = new THREE.PerspectiveCamera(
 );
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
+// Favor motion clarity over supersampling. Dense material detail still reads
+// at 0.7×, while the lower internal resolution keeps this WebGL scene above
+// the 60 FPS floor on integrated GPUs and high-DPI displays.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 0.7));
+// Static contact shading carries the miniature-scale grounding without a
+// second realtime shadow render of the entire scene.
+renderer.shadowMap.enabled = false;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -131,8 +137,10 @@ let frameCount = 0;
 let fpsSampleStarted = previousTime;
 let displayedFps = 60;
 let displayedBody = '';
+let displayedPackTransform = '';
+let displayedPackReadout = '';
+let lastDebugUpdate = 0;
 let observedLandingCount = controller.snapshot().landing.count;
-let cameraDip = 0;
 
 interface DustBurst {
   readonly points: THREE.Points;
@@ -143,14 +151,8 @@ interface DustBurst {
 
 const dustBursts: DustBurst[] = [];
 const POLISH = {
-  normalLandingDip: 0.08,
-  packLandingDip: 0.32,
-  dipRecoveryRate: 9,
   dustLifetime: 0.58,
   dustPointCount: 18,
-  fovResponse: 7,
-  rumbleHeight: 0.018,
-  rumbleRoll: 0.0016,
 } as const;
 
 input.onDebugToggle(() => {
@@ -189,6 +191,9 @@ document.addEventListener('pointerlockchange', () => setPointerLockUi(input.isPo
 
 function updateDebug(): void {
   if (!debugVisible) return;
+  const now = performance.now();
+  if (now - lastDebugUpdate < 100) return;
+  lastDebugUpdate = now;
   const snapshot = controller.snapshot();
   const format = (value: number) => value.toFixed(2).padStart(8, ' ');
   const distance = Number.isFinite(snapshot.groundDistance)
@@ -201,6 +206,7 @@ function updateDebug(): void {
     `GROUND  ${distance}`,
     `VIEW    ${format(snapshot.yawDegrees)}°  ${format(snapshot.pitchDegrees)}°`,
     `FPS     ${String(displayedFps).padStart(8, ' ')}`,
+    `DRAW    ${String(renderer.info.render.calls).padStart(8, ' ')} calls  ${String(renderer.info.render.triangles).padStart(8, ' ')} tris`,
     `PACK    ${snapshot.pack.charge.toFixed(2).padStart(8, ' ')}  ${
       snapshot.pack.horizontalDistance === null
         ? 'NO FLIGHT'
@@ -226,8 +232,12 @@ function updateBodyHud(): void {
   }
   const hasPack = GAME.bodies[snapshot.body].hasJumpPack;
   packMeter.classList.toggle('available', hasPack);
-  packFill.style.transform = `scaleX(${snapshot.pack.charge})`;
-  packReadout.textContent =
+  const packTransform = `scaleX(${snapshot.pack.charge})`;
+  if (packTransform !== displayedPackTransform) {
+    displayedPackTransform = packTransform;
+    packFill.style.transform = packTransform;
+  }
+  const nextPackReadout =
     snapshot.state === 'PACK_BALLISTIC'
       ? 'Ballistic commitment'
       : snapshot.state === 'RETRO_BURN'
@@ -235,6 +245,10 @@ function updateBodyHud(): void {
         : snapshot.pack.armed
           ? `Charging ${Math.round(snapshot.pack.charge * 100)}%`
           : 'Pack ready · hold Space';
+  if (nextPackReadout !== displayedPackReadout) {
+    displayedPackReadout = nextPackReadout;
+    packReadout.textContent = nextPackReadout;
+  }
 }
 
 function updateDebugArc(): void {
@@ -332,30 +346,11 @@ function updateDust(dt: number): void {
   }
 }
 
-function updatePresentation(dt: number, now: number): void {
+function updatePresentation(dt: number): void {
   const snapshot = controller.snapshot();
   if (snapshot.landing.count !== observedLandingCount) {
     observedLandingCount = snapshot.landing.count;
-    cameraDip = Math.max(
-      cameraDip,
-      snapshot.landing.wasPack ? POLISH.packLandingDip : POLISH.normalLandingDip,
-    );
     spawnDust(snapshot.landing.position, snapshot.landing.impactSpeed);
-  }
-  cameraDip = THREE.MathUtils.damp(cameraDip, 0, POLISH.dipRecoveryRate, dt);
-  const packFlight =
-    snapshot.state === 'PACK_BALLISTIC' || snapshot.state === 'RETRO_BURN';
-  const targetFov =
-    GAME.camera.fovDegrees + (packFlight ? GAME.camera.packFlightFovKickDegrees : 0);
-  const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, POLISH.fovResponse, dt);
-  if (Math.abs(nextFov - camera.fov) > 0.001) {
-    camera.fov = nextFov;
-    camera.updateProjectionMatrix();
-  }
-  if (!cornerPreview) {
-    camera.position.y -= cameraDip;
-    camera.position.y += packFlight ? Math.sin(now * 0.028) * POLISH.rumbleHeight : 0;
-    camera.rotation.z = packFlight ? Math.sin(now * 0.034) * POLISH.rumbleRoll : 0;
   }
   footstepAudio.update(snapshot, input.isPointerLocked());
   updateDust(dt);
@@ -374,11 +369,14 @@ function render(now: number): void {
   }
   updateBodyHud();
   updateDebugArc();
-  updatePresentation(frameDt, now);
+  updatePresentation(frameDt);
+  world.updateEnvironment(now / 1000);
 
   frameCount += 1;
   if (now - fpsSampleStarted >= 500) {
     displayedFps = Math.round((frameCount * 1000) / (now - fpsSampleStarted));
+    renderer.domElement.dataset.fps = String(displayedFps);
+    renderer.domElement.dataset.drawCalls = String(renderer.info.render.calls);
     frameCount = 0;
     fpsSampleStarted = now;
   }
@@ -435,6 +433,23 @@ const testApi = {
     colliders: world.collidables.length,
     terrainMeshes: terrain.terrainMeshCount,
     groundTargetNames: world.groundRaycastGroup.children.map((child) => child.name),
+    roomObjects: world.environmentStats.roomObjects,
+    tabletopDetails: world.environmentStats.tabletopDetails,
+    environmentNames: world.sceneRoot.children.map((child) => child.name),
+    renderGroups: world.sceneRoot.children.map((child) => {
+      let meshes = 0;
+      let lines = 0;
+      let shadowCasters = 0;
+      child.traverse((descendant) => {
+        if (descendant instanceof THREE.Mesh) {
+          meshes += 1;
+          if (descendant.castShadow) shadowCasters += 1;
+        } else if (descendant instanceof THREE.LineSegments) {
+          lines += 1;
+        }
+      });
+      return { name: child.name || '(unnamed)', meshes, lines, shadowCasters };
+    }),
   }),
   installPackTestArena,
   clearPackTestArena,
@@ -460,6 +475,9 @@ if (searchParams.get('selftest') === 'timing') {
 }
 if (searchParams.get('selftest') === 'controls') {
   runControlsSelfTest(testApi);
+}
+if (searchParams.get('selftest') === 'environment') {
+  runEnvironmentSelfTest(testApi);
 }
 updateBodyHud();
 requestAnimationFrame(render);

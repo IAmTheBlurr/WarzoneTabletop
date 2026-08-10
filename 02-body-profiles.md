@@ -11,8 +11,8 @@ All values are in world units (feet) and units/second. Mirror of `game-constants
 | Fiction | Ordinary human trooper, flak armour | Adepta Sororitas in power armour | Transhuman in Mk X power armour |
 | Standing height | 5.8 (≈5'9") | 6.3 (≈6'3" armoured) | 8.5 (armoured) |
 | **Camera eye height** | **5.4** | **5.9** | **8.1** |
-| Walk speed | 4.5 | 5.5 | 6.6 |
-| Sprint speed (hold Shift) | 8.1 | 9.9 | 11.9 |
+| Combat run speed | 7.0 | 8.5 | 10.5 |
+| Sprint speed (hold Shift) | 12.5 | 15.0 | 18.0 |
 | Acceleration (units/s²) | 45 | 28 | 22 |
 | Deceleration (units/s²) | 60 | 40 | 35 |
 | Air control multiplier | 0.9 | 0.6 | 0.5 |
@@ -25,24 +25,23 @@ All values are in world units (feet) and units/second. Mirror of `game-constants
 
 Eye height alone can't differentiate the Guardsman and Sister (their lore heights are genuinely close), so each body gets a distinct *handling* identity:
 
-- **Guardsman — nimble and small.** Lowest viewpoint, slowest top speed, but the snappiest handling in the game: highest accel/decel and near-full air control. Everything looms over him; he darts. Playing him is "scout cam".
-- **Sister — armoured momentum.** Power armour's servo-muscles push her *top speed above an unaugmented human's* despite similar legs — this deliberately breaks the leg-length scaling formula below; the armour does the work. But she carries weight: slow spool-up, wide stops, reduced air control, and that huge 4-unit servo-assisted jump. Playing her is commitment to lines of movement.
-- **Primaris — the hero body.** Tallest view, fastest stride, biggest jump, the jump pack, and the widest capsule — he squeezes through doorways the others stroll through, and steps over rubble (1.5 step height) that stops them. A locomotive: slowest to accelerate, fastest at full tilt.
+- **Guardsman — nimble and small.** Lowest viewpoint and slowest top speed, with near-full air control. Everything looms over him; he darts. Playing him is "scout cam".
+- **Sister — armoured momentum.** Power armour's servo-muscles push her *top speed above an unaugmented human's* despite similar legs. Her reduced air control and large servo-assisted jump distinguish her once she leaves the ground.
+- **Primaris — the hero body.** Tallest view, fastest run, biggest jump, the jump pack, and the widest capsule — he squeezes through doorways the others stroll through and steps over rubble that stops them.
 
 ## Design rationale (do not re-derive, just know why)
 
 - **Heights are lore-anchored.** Normal humans in 40k run 5'7"–5'10"; Sisters are baseline women boosted a few inches by power armour; Primaris in armour land around 8–8.5 ft. (The 8.5 body vs the 8.0 scale anchor is a documented decision — `01-scale-system.md`.)
-- **Base speed comes from leg length, then armour adjusts.** Baseline: a playable FPS walk of 4.5 for the Guardsman; the Primaris scales linearly with height (`4.5 × 8.5/5.8 ≈ 6.6`). The Sister is deliberately boosted above her height-scaled value (which would be a boring 4.9) to 5.5 for the armour-assist identity. Sprint = 1.8× walk for all.
+- **Locomotion is perceptually tuned rather than literal.** Measured real-world walk speeds were mathematically correct but felt too slow across a sparse miniature battlefield. WASD is therefore a combat run and Shift is sprint. Literal Primaris walking remains the scale reference (6.6 units/s, 35.6 seconds across 44 board inches), not an active mode.
 - **Jumps scale with power armour, not height.** Unaugmented athletic vertical ≈ 1.5 ft; servo-muscles justify the Sister's 4.0 and Primaris 6.0. Gameplay-tuned, lore-flavoured.
 
 ## Movement model (ground + air)
 
-Horizontal velocity approaches the wish direction with per-body accel/decel:
+Ground movement reaches its target immediately. Normal jumps retain body-specific air control:
 
 ```
-target   = wishDir × (sprintHeld ? sprintSpeed : walkSpeed)   // wishDir from WASD, camera-relative, y=0
-rate     = (|target| > |horizVel| toward target) ? accel : decel
-horizVel = moveTowards(horizVel, target, rate × dt)
+target   = wishDir × (sprintHeld ? sprintSpeed : runSpeed)    // wishDir from WASD, camera-relative, y=0
+grounded ? horizVel = target : horizVel = moveTowards(horizVel, target, airRate × dt)
 ```
 
 - Airborne from a **normal jump**: multiply `rate` by `airControlMultiplier`.
