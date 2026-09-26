@@ -16,6 +16,9 @@ export interface BoardWorld extends CollisionWorld {
   updateEnvironment(timeSeconds: number): void;
 }
 
+export const TABLE_APRON_WIDTH = 14;
+export const TABLE_TOP_Y = -0.35;
+
 function createBox(
   width: number,
   height: number,
@@ -128,7 +131,7 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
   mat.name = 'battle-mat';
   groundRaycastGroup.add(mat);
 
-  const apronWidth = 14;
+  const apronWidth = TABLE_APRON_WIDTH;
   const table = createBox(
     GAME.board.worldUnits.width + apronWidth * 2,
     4,
@@ -136,64 +139,10 @@ export function createBoardWorld(scene: THREE.Scene): BoardWorld {
     PALETTE.tableWood,
     0.68,
   );
-  table.position.y = -2.35;
+  table.position.y = TABLE_TOP_Y - 2;
   table.name = 'table-apron';
   table.castShadow = true;
   groundRaycastGroup.add(table);
-
-  const dieSize = 9;
-  const dieX = -GAME.board.worldUnits.width / 2 - 6.2;
-  const dieZ = -120;
-  const tableTop = -0.35;
-  const die = createBox(dieSize, dieSize, dieSize, PALETTE.templateTan, 0.48);
-  die.position.set(dieX, tableTop + dieSize / 2, dieZ);
-  die.name = 'off-board-scale-die';
-  die.castShadow = true;
-  groundRaycastGroup.add(die);
-  die.updateMatrixWorld(true);
-  collidables.push({ id: die.name, bounds: new THREE.Box3().setFromObject(die) });
-
-  const pipMaterial = new THREE.MeshStandardMaterial({
-    color: PALETTE.templateDark,
-    roughness: 0.5,
-  });
-  const pipGeometry = new THREE.SphereGeometry(0.56, 10, 6);
-  const pips = new THREE.InstancedMesh(pipGeometry, pipMaterial, 7);
-  pips.name = 'instanced-scale-die-pips';
-  const pipTransform = new THREE.Object3D();
-  let pipIndex = 0;
-  const topY = tableTop + dieSize - 0.1;
-  for (const [offsetX, offsetZ] of [
-    [-2.1, -2.1],
-    [0, 0],
-    [2.1, 2.1],
-  ] as const) {
-    pipTransform.position.set(dieX + offsetX, topY, dieZ + offsetZ);
-    pipTransform.rotation.set(0, 0, 0);
-    pipTransform.scale.set(1, 0.34, 1);
-    pipTransform.updateMatrix();
-    pips.setMatrixAt(pipIndex, pipTransform.matrix);
-    pipIndex += 1;
-  }
-  for (const [offsetX, offsetY] of [
-    [-2.1, -2.1],
-    [2.1, -2.1],
-    [-2.1, 2.1],
-    [2.1, 2.1],
-  ] as const) {
-    pipTransform.position.set(
-      dieX + offsetX,
-      tableTop + dieSize / 2 + offsetY,
-      dieZ - dieSize / 2 + 0.1,
-    );
-    pipTransform.rotation.set(0, 0, 0);
-    pipTransform.scale.set(1, 1, 0.34);
-    pipTransform.updateMatrix();
-    pips.setMatrixAt(pipIndex, pipTransform.matrix);
-    pipIndex += 1;
-  }
-  pips.instanceMatrix.needsUpdate = true;
-  root.add(pips);
 
   const grid = new THREE.GridHelper(
     GAME.board.worldUnits.depth,

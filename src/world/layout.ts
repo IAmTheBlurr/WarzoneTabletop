@@ -18,9 +18,8 @@ export const BOARD_INCH_TO_WORLD = GAME.scale.inchesPerBoardInch / 12;
 export const boardInchesToWorld = (inches: number): number =>
   inches * BOARD_INCH_TO_WORLD;
 
-// A 180-degree-symmetric tournament-style layout based on 04 §4.4. The long
-// and short lines are shifted slightly from the illustrative table to prevent
-// footprint overlap while preserving its center-heavy sightline blocking.
+// Rotational symmetry and center-heavy ruins keep traversal balanced. Line
+// placements leave clearance around neighboring footprints.
 export const BATTLEFIELD_LAYOUT: readonly FootprintPlacement[] = [
   { key: 'large-rect-a', footprintId: 'largeRect', instance: 0, boardX: 0, boardZ: 10, rotationDegrees: 90 },
   { key: 'large-rect-b', footprintId: 'largeRect', instance: 1, boardX: 0, boardZ: -10, rotationDegrees: 270 },
@@ -45,4 +44,3 @@ export function getFootprintSpec(id: FootprintId) {
   if (!spec) throw new Error(`Unknown footprint id: ${id}`);
   return spec;
 }
-

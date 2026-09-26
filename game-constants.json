@@ -1,12 +1,11 @@
 {
-  "$schema_note": "Single source of truth for gameplay constants. 1 world unit = 1 in-fiction foot. 'boardInches' fields are physical tabletop measurements; convert with boardInches * scale.inchesPerBoardInch / 12. Collision & ground-detection semantics: see 07-collision-and-ground.md. pos = player FEET; camera = pos + eyeHeight.",
+  "$schema_note": "Gameplay tuning. World units are in-fiction feet; boardInches are physical tabletop inches. Convert with boardInchesToWorld in src/world/layout.ts.",
   "scale": {
     "modelHeightInches": 1.5,
     "loreHeightFeet": 8.0,
     "inchesPerBoardInch": 64,
     "worldUnitsPerBoardInch": 5.3333,
-    "unitDefinition": "1 world unit = 1 in-fiction foot",
-    "anchorNote": "Scale factor 64 derives from the clean 8.0 ft lore anchor (96 in / 1.5 in model). The in-game Primaris BODY uses 8.5 ft (armoured lore ceiling). This ~6% mismatch is a deliberate, documented decision — see 01-scale-system.md 'The 8.0 vs 8.5 anchor'. Do not re-derive scale from the 8.5 body height."
+    "unitDefinition": "1 world unit = 1 in-fiction foot"
   },
   "board": {
     "boardInches": { "width": 44, "depth": 60 },
@@ -27,13 +26,9 @@
   "spawn": {
     "feetPosition": [0, 0, -145],
     "facing": [0, 0, 1],
-    "facingNote": "Forward vector = toward board center (+Z). Board Z spans -160..+160; spawn sits 15 units inside the short edge, i.e. a deployment-zone feel.",
     "defaultBody": "primaris",
-    "defaultBodyNote": "Start in the hero body so the signature mechanic (jump pack) is available immediately; swapping DOWN to Guardsman delivers the scale shock.",
-    "respawn": "Same point + facing. Trigger: falling below respawnPlaneY, set just ABOVE the visual room floor so the player never lands on or clips through it.",
     "respawnPlaneY": -175,
-    "roomFloorYUnits": -180,
-    "roomFloorNote": "Visual scenery only — excluded from collidables AND groundRaycastGroup (07 §7.2). Prevents pack-rescue soft-locks off the table edge. A walkable room floor is an explicit future option, not v1."
+    "roomFloorYUnits": -180
   },
   "bodies": {
     "guardsman": {
@@ -83,12 +78,9 @@
     }
   },
   "collision": {
-    "spec": "07-collision-and-ground.md is authoritative",
     "groundSnapDistanceUnits": 0.3,
     "coyoteTimeSeconds": 0.1,
     "contactEpsilonUnits": 0.05,
-    "groundRayPattern": "5 down-rays: center + 4 offsets at 0.7 x capsuleRadius, origins at feet + stepHeight",
-    "wallBand": "AABBs block horizontally only within [feet + stepHeight, feet + heightUnits]; lower obstacles are auto-stepped",
     "flatWorldAssumption": true,
     "minDoorwayWidthUnits": 5.0,
     "horizontalResolveIterations": 2
@@ -102,15 +94,33 @@
     "airtimeSeconds": 2.0,
     "airControl": false,
     "requiresTrueGrounded": true,
-    "groundedCheckNote": "Grounded is checked at KEYDOWN (strict, no coyote — 07 §7.4). The pack fires at the 0.5 s threshold even though the tap-jump usually has the player mid-air by then; the launch velocity OVERRIDES current velocity entirely (mandatory, see 03 §3.1).",
     "retroBurn": {
       "trigger": "ground-proximity",
-      "distanceRay": "center feet-origin down-ray vs groundRaycastGroup (07 §7.4)",
       "activationHeightUnits": 11.0,
       "targetLandingSpeedUnitsPerSec": 5.0,
-      "maxThrustAccelUnitsPerSec2": 96.6,
-      "note": "activationHeight tunable 10-12; maxThrust = 3g cap"
+      "maxThrustAccelUnitsPerSec2": 96.6
     }
+  },
+  "dice": {
+    "sizeBoardInches": 0.625,
+    "mass": 1.0,
+    "physicsSubsteps": 2,
+    "friction": 0.58,
+    "restitution": 0.25,
+    "linearDamping": 0.17,
+    "angularDamping": 0.2,
+    "sleepSpeedLimit": 0.15,
+    "sleepTimeLimitSeconds": 0.6,
+    "settleLinearSpeed": 0.2,
+    "settleAngularSpeed": 0.24,
+    "settleDurationSeconds": 0.55,
+    "disturbedLinearSpeed": 0.45,
+    "disturbedAngularSpeed": 0.6,
+    "cockedToleranceDegrees": 2.2,
+    "playerKillImpactSpeed": 3.5,
+    "rerollDelaySeconds": 0.72,
+    "ascensionHeightBoardInches": 3.0,
+    "ascensionDurationSeconds": 1.55
   },
   "terrainLevels": {
     "levelHeightBoardInches": 3.0,
@@ -122,28 +132,20 @@
     ]
   },
   "footprints": {
-    "setNote": "Official 11th-edition standard competitive set: 16 pieces, 5 shapes. Dimensions in board inches; multiply by 5.3333 for world units.",
     "pieces": [
       { "id": "largeRect", "count": 4, "shape": "rectangle", "boardInches": [7.0, 11.5], "worldUnits": [37.33, 61.33] },
-      { "id": "largeTri", "count": 2, "shape": "truncated-right-triangle", "boardInches": [8.0, 11.5], "worldUnits": [42.67, 61.33], "truncatedTipBoardInches": 1.5, "diagonalCurve": "slight", "pendingPhotos": true },
+      { "id": "largeTri", "count": 2, "shape": "truncated-right-triangle", "boardInches": [8.0, 11.5], "worldUnits": [42.67, 61.33], "truncatedTipBoardInches": 1.5, "diagonalCurve": "slight" },
       { "id": "mediumRect", "count": 4, "shape": "rectangle", "boardInches": [6.0, 4.0], "worldUnits": [32.0, 21.33] },
       { "id": "longLine", "count": 2, "shape": "rectangle", "boardInches": [10.0, 2.5], "worldUnits": [53.33, 13.33] },
       { "id": "shortLine", "count": 4, "shape": "rectangle", "boardInches": [6.0, 2.0], "worldUnits": [32.0, 10.67] }
     ]
   },
   "controls": {
-    "moveForward": "W",
-    "moveBack": "S",
-    "strafeLeft": "A",
-    "strafeRight": "D",
-    "sprint": "ShiftLeft (hold)",
-    "jump": "Space (tap = normal jump; hold >= holdThresholdSeconds = jump pack if hasJumpPack)",
-    "switchBody": "Digit1 / Digit2 / Digit3",
-    "look": "Mouse (pointer lock)"
-  },
-  "rejectedLoreAccurateSpeeds": {
-    "note": "For reference only — do NOT implement. Tabletop-faithful movement (6 board inches per round, 5 rounds ~= 3-5 minutes of fiction) yields 0.36-0.61 mph, i.e. ~0.1-0.18 units/sec. Unplayable.",
-    "wholeGame3min_mph": 0.61,
-    "wholeGame5min_mph": 0.36
+    "mouseSensitivity": {
+      "minimum": 1,
+      "maximum": 100,
+      "default": 50,
+      "baselineRadiansPerPixel": 0.0018
+    }
   }
 }

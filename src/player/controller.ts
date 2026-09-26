@@ -6,6 +6,7 @@ import {
   type ControllerState,
 } from '../constants';
 import type { InputManager } from './input';
+import { mouseSensitivityMultiplier } from '../settings';
 import { createPackLaunchVelocity, integrateRetroBurnVelocity } from './jumppack';
 import {
   centerGroundDistance,
@@ -86,6 +87,7 @@ export class PlayerController {
   private lastLandingImpactSpeed = 0;
   private lastLandingWasPack = false;
   private lastLandingPosition: [number, number, number] = [0, 0, 0];
+  private mouseLookMultiplier = 1;
 
   constructor(
     private readonly camera: THREE.PerspectiveCamera,
@@ -160,6 +162,9 @@ export class PlayerController {
       this.state = 'RETRO_BURN';
       this.packBurnActivationDistance = preStepGroundDistance;
       const downwardSpeed = -this.velocity.y;
+      // Real-time braking would extend the horizontal flight beyond its target.
+      // Advance the vertical solver faster to fit the remaining airtime while
+      // retaining proximity-triggered braking and unchanged horizontal speed.
       const internalBurnTime =
         (2 * preStepGroundDistance) /
         (downwardSpeed + GAME.jumpPack.retroBurn.targetLandingSpeedUnitsPerSec);
@@ -419,7 +424,8 @@ export class PlayerController {
   }
 
   look(movementX: number, movementY: number): void {
-    const sensitivity = 0.0018;
+    const sensitivity =
+      GAME.controls.mouseSensitivity.baselineRadiansPerPixel * this.mouseLookMultiplier;
     this.yaw -= movementX * sensitivity;
     this.pitch -= movementY * sensitivity;
     this.pitch = THREE.MathUtils.clamp(
@@ -427,6 +433,10 @@ export class PlayerController {
       -Math.PI / 2 + 0.01,
       Math.PI / 2 - 0.01,
     );
+  }
+
+  setMouseSensitivity(value: number): void {
+    this.mouseLookMultiplier = mouseSensitivityMultiplier(value);
   }
 
   private respawn(): void {

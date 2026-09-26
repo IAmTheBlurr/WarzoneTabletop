@@ -10,6 +10,7 @@ export interface InputSnapshot {
 type JumpHandler = () => void;
 type LookHandler = (movementX: number, movementY: number) => void;
 type BodySwitchHandler = (hotkey: '1' | '2' | '3') => void;
+type DiceRollHandler = () => void;
 
 const BODY_HOTKEY_BY_CODE = {
   Digit1: '1',
@@ -29,6 +30,7 @@ export class InputManager {
   private lookHandler: LookHandler = () => undefined;
   private debugHandler: () => void = () => undefined;
   private bodySwitchHandler: BodySwitchHandler = () => undefined;
+  private diceRollHandler: DiceRollHandler = () => undefined;
 
   constructor(private readonly lockTarget: HTMLElement) {
     window.addEventListener('keydown', this.onKeyDown);
@@ -55,6 +57,10 @@ export class InputManager {
 
   onBodySwitch(handler: BodySwitchHandler): void {
     this.bodySwitchHandler = handler;
+  }
+
+  onDiceRoll(handler: DiceRollHandler): void {
+    this.diceRollHandler = handler;
   }
 
   requestPointerLock(): void {
@@ -86,6 +92,12 @@ export class InputManager {
     this.virtual.clear();
   }
 
+  releaseHeld(): void {
+    const releasedJump = this.held.has('Space');
+    this.held.clear();
+    if (releasedJump) this.jumpReleaseHandler();
+  }
+
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.code === 'Backquote' && !event.repeat) {
       this.debugHandler();
@@ -97,6 +109,11 @@ export class InputManager {
 
     const bodyHotkey = bodyHotkeyFromCode(event.code);
     if (!event.repeat && bodyHotkey) this.bodySwitchHandler(bodyHotkey);
+
+    if (event.code === 'KeyR' && !event.repeat) {
+      event.preventDefault();
+      this.diceRollHandler();
+    }
 
     if (event.code === 'Space') {
       event.preventDefault();
@@ -115,6 +132,6 @@ export class InputManager {
   };
 
   private readonly clear = (): void => {
-    this.held.clear();
+    this.releaseHeld();
   };
 }

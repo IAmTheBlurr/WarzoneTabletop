@@ -3,3 +3,22 @@ dist/
 .vite/
 *.log
 *.tsbuildinfo
+
+# Local configuration and scratch output
+.env
+.env.*
+!.env.example
+*.local
+/tmp/
+/output/
+/artifacts/
+/.shots/
+.DS_Store
+Thumbs.db
+
+# Python and agent-local caches
+__pycache__/
+*.py[cod]
+.venv/
+.claude/settings.local.json
+CLAUDE.local.md

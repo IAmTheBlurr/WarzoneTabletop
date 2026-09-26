@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import './styles.css';
 import { FootstepAudio } from './audio/footsteps';
 import { FIXED_TIMESTEP, GAME } from './constants';
+import { DiceSystem } from './dice/diceSystem';
 import { InputManager } from './player/input';
 import { PlayerController } from './player/controller';
 import { createPackLaunchVelocity } from './player/jumppack';
@@ -18,6 +19,7 @@ import { createBoardWorld } from './world/board';
 import { createFootprints } from './world/footprints';
 import { createTerrain } from './world/terrain';
 import { FixedStepClock } from './simulation/fixedStepClock';
+import { mouseSensitivityMultiplier, SettingsStore } from './settings';
 
 function requiredElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -28,7 +30,18 @@ function requiredElement<T extends Element>(selector: string): T {
 const app = requiredElement<HTMLDivElement>('#app');
 const entry = requiredElement<HTMLElement>('#entry');
 const enterButton = requiredElement<HTMLButtonElement>('#enter-button');
-const pauseHint = requiredElement<HTMLElement>('#pause-hint');
+const mainOptionsButton = requiredElement<HTMLButtonElement>('#main-options-button');
+const pauseMenu = requiredElement<HTMLElement>('#pause-menu');
+const resumeButton = requiredElement<HTMLButtonElement>('#resume-button');
+const pauseOptionsButton = requiredElement<HTMLButtonElement>('#pause-options-button');
+const mainMenuButton = requiredElement<HTMLButtonElement>('#main-menu-button');
+const optionsMenu = requiredElement<HTMLElement>('#options-menu');
+const optionsContext = requiredElement<HTMLElement>('#options-context');
+const optionsBackButton = requiredElement<HTMLButtonElement>('#options-back-button');
+const optionsResetButton = requiredElement<HTMLButtonElement>('#options-reset-button');
+const mouseSensitivityInput = requiredElement<HTMLInputElement>('#mouse-sensitivity');
+const mouseSensitivityValue = requiredElement<HTMLOutputElement>('#mouse-sensitivity-value');
+const mouseSensitivityDetail = requiredElement<HTMLElement>('#mouse-sensitivity-detail');
 const debugPanel = requiredElement<HTMLElement>('#debug');
 const debugReadout = requiredElement<HTMLElement>('#debug-readout');
 const bodyIndex = requiredElement<HTMLElement>('#body-index');
@@ -37,6 +50,12 @@ const bodyDetail = requiredElement<HTMLElement>('#body-detail');
 const packMeter = requiredElement<HTMLElement>('#pack-meter');
 const packFill = requiredElement<HTMLElement>('#pack-fill');
 const packReadout = requiredElement<HTMLElement>('#pack-readout');
+const diceRollButton = requiredElement<HTMLButtonElement>('#dice-roll-button');
+const diceStatus = requiredElement<HTMLElement>('#dice-status');
+const diceDetail = requiredElement<HTMLElement>('#dice-detail');
+const diceAnnouncement = requiredElement<HTMLElement>('#dice-announcement');
+const diceAnnouncementPrimary = requiredElement<HTMLElement>('#dice-announcement-primary');
+const diceAnnouncementSecondary = requiredElement<HTMLElement>('#dice-announcement-secondary');
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
@@ -70,6 +89,61 @@ const terrain = createTerrain(
 const input = new InputManager(renderer.domElement);
 const controller = new PlayerController(camera, input, world);
 const footstepAudio = new FootstepAudio();
+const settings = new SettingsStore();
+let diceAnnouncementTimer: number | null = null;
+
+mouseSensitivityInput.min = String(GAME.controls.mouseSensitivity.minimum);
+mouseSensitivityInput.max = String(GAME.controls.mouseSensitivity.maximum);
+settings.subscribe((next) => {
+  controller.setMouseSensitivity(next.mouseSensitivity);
+  mouseSensitivityInput.value = String(next.mouseSensitivity);
+  mouseSensitivityValue.value = String(next.mouseSensitivity);
+  mouseSensitivityValue.textContent = String(next.mouseSensitivity);
+  mouseSensitivityDetail.textContent = `${mouseSensitivityMultiplier(next.mouseSensitivity).toFixed(2)}× look input · saved automatically`;
+});
+
+mouseSensitivityInput.addEventListener('input', () => {
+  settings.setMouseSensitivity(Number(mouseSensitivityInput.value));
+});
+optionsResetButton.addEventListener('click', () => settings.reset());
+
+function showDiceAnnouncement(
+  primary: string,
+  secondary: string,
+  tone: 'result' | 'reroll' | 'impact',
+): void {
+  if (diceAnnouncementTimer !== null) window.clearTimeout(diceAnnouncementTimer);
+  diceAnnouncement.classList.remove('visible');
+  diceAnnouncement.dataset.tone = tone;
+  diceAnnouncementPrimary.textContent = primary;
+  diceAnnouncementSecondary.textContent = secondary;
+  // Restart the transition even when a rapid automatic reroll replaces a result.
+  void diceAnnouncement.offsetWidth;
+  diceAnnouncement.classList.add('visible');
+  const duration = tone === 'result' ? 1050 : 820;
+  diceAnnouncementTimer = window.setTimeout(() => {
+    diceAnnouncement.classList.remove('visible');
+    diceAnnouncementTimer = null;
+  }, duration);
+}
+
+const dice = new DiceSystem({
+  scene,
+  collidables: world.collidables,
+  getPlayerSnapshot: () => controller.snapshot(),
+  onPlayerHit: () => controller.reset(),
+  onStatus: (primary, secondary) => {
+    diceStatus.textContent = primary;
+    diceDetail.textContent = secondary;
+  },
+  onAnnouncement: showDiceAnnouncement,
+});
+input.onDiceRoll(() => dice.roll());
+diceRollButton.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  dice.roll();
+});
 const searchParams = new URLSearchParams(window.location.search);
 const cornerPreview = searchParams.get('preview') === 'corner';
 const windowPreview = searchParams.get('preview') === 'window';
@@ -162,33 +236,96 @@ input.onDebugToggle(() => {
 });
 
 debugPanel.hidden = !debugVisible;
+let hasEnteredBattlefield = searchParams.has('preview');
+let optionsReturnContext: 'main' | 'pause' = 'main';
 if (searchParams.has('preview')) {
   document.body.classList.add('is-playing');
   entry.classList.add('dismissed');
 }
 if (cornerPreview) document.body.classList.add('cinematic-preview');
 
+function requestFieldControl(): void {
+  footstepAudio.unlock();
+  input.requestPointerLock();
+}
+
+function openOptions(context: 'main' | 'pause'): void {
+  optionsReturnContext = context;
+  optionsContext.textContent =
+    context === 'main' ? 'Main menu / configuration' : 'Paused / configuration';
+  pauseMenu.hidden = true;
+  optionsMenu.hidden = false;
+  mouseSensitivityInput.focus();
+}
+
+function closeOptions(): void {
+  optionsMenu.hidden = true;
+  if (optionsReturnContext === 'pause' && hasEnteredBattlefield) {
+    pauseMenu.hidden = false;
+    resumeButton.focus();
+  } else {
+    mainOptionsButton.focus();
+  }
+}
+
+function showMainMenu(): void {
+  hasEnteredBattlefield = false;
+  input.releaseHeld();
+  optionsMenu.hidden = true;
+  pauseMenu.hidden = true;
+  entry.classList.remove('dismissed');
+  document.body.classList.remove('is-playing');
+  enterButton.focus();
+}
+
 function setPointerLockUi(locked: boolean): void {
   document.body.classList.toggle('is-playing', locked);
   if (locked) {
+    hasEnteredBattlefield = true;
     entry.classList.add('dismissed');
-    pauseHint.hidden = true;
-  } else if (entry.classList.contains('dismissed')) {
-    pauseHint.hidden = false;
+    pauseMenu.hidden = true;
+    optionsMenu.hidden = true;
+  } else {
+    input.releaseHeld();
+    if (hasEnteredBattlefield && !searchParams.has('preview') && optionsMenu.hidden) {
+      pauseMenu.hidden = false;
+      resumeButton.focus();
+    }
   }
 }
 
 enterButton.addEventListener('click', () => {
-  footstepAudio.unlock();
-  input.requestPointerLock();
+  hasEnteredBattlefield = true;
+  requestFieldControl();
 });
+mainOptionsButton.addEventListener('click', () => openOptions('main'));
+resumeButton.addEventListener('click', requestFieldControl);
+pauseOptionsButton.addEventListener('click', () => openOptions('pause'));
+mainMenuButton.addEventListener('click', showMainMenu);
+optionsBackButton.addEventListener('click', closeOptions);
 renderer.domElement.addEventListener('click', () => {
-  if (!input.isPointerLocked() && entry.classList.contains('dismissed')) {
-    footstepAudio.unlock();
-    input.requestPointerLock();
+  if (
+    !input.isPointerLocked() &&
+    hasEnteredBattlefield &&
+    pauseMenu.hidden &&
+    optionsMenu.hidden
+  ) {
+    requestFieldControl();
   }
 });
 document.addEventListener('pointerlockchange', () => setPointerLockUi(input.isPointerLocked()));
+window.addEventListener('keydown', (event) => {
+  if (event.code !== 'Escape') return;
+  if (!optionsMenu.hidden) {
+    event.preventDefault();
+    closeOptions();
+    return;
+  }
+  if (!hasEnteredBattlefield || !input.isPointerLocked()) return;
+  input.releaseHeld();
+  setPointerLockUi(false);
+  void document.exitPointerLock();
+});
 
 function updateDebug(): void {
   if (!debugVisible) return;
@@ -196,6 +333,7 @@ function updateDebug(): void {
   if (now - lastDebugUpdate < 100) return;
   lastDebugUpdate = now;
   const snapshot = controller.snapshot();
+  const die = dice.snapshot();
   const format = (value: number) => value.toFixed(2).padStart(8, ' ');
   const distance = Number.isFinite(snapshot.groundDistance)
     ? `${format(snapshot.groundDistance)} u`
@@ -208,6 +346,8 @@ function updateDebug(): void {
     `VIEW    ${format(snapshot.yawDegrees)}°  ${format(snapshot.pitchDegrees)}°`,
     `FPS     ${String(displayedFps).padStart(8, ' ')}`,
     `DRAW    ${String(renderer.info.render.calls).padStart(8, ' ')} calls  ${String(renderer.info.render.triangles).padStart(8, ' ')} tris`,
+    `DIE     ${die.state.padStart(8, ' ')}  ${die.value === null ? '-' : die.value}  ${die.linearSpeed.toFixed(2)}u/s`,
+    `D6 SIZE ${die.sizeBoardInches.toFixed(3).padStart(8, ' ')}in  COCKED >${die.cockedThresholdDegrees.toFixed(1)}°`,
     `PACK    ${snapshot.pack.charge.toFixed(2).padStart(8, ' ')}  ${
       snapshot.pack.horizontalDistance === null
         ? 'NO FLIGHT'
@@ -355,13 +495,17 @@ function updatePresentation(dt: number): void {
   }
   footstepAudio.update(snapshot, input.isPointerLocked());
   updateDust(dt);
+  dice.updatePresentation(dt);
 }
 
 function render(now: number): void {
   requestAnimationFrame(render);
   const frameDt = Math.max((now - previousTime) / 1000, 0);
   previousTime = now;
-  physicsClock.advance(frameDt, (dt) => controller.update(dt));
+  physicsClock.advance(frameDt, (dt) => {
+    controller.update(dt);
+    dice.updatePhysics(dt);
+  });
   if (cornerPreview) {
     camera.position.set(-178, 152, -224);
     camera.lookAt(0, 9, 0);
@@ -409,10 +553,30 @@ const testApi = {
   clearInput: () => input.clearVirtual(),
   step: (seconds: number) => {
     const steps = Math.ceil(seconds / FIXED_TIMESTEP);
-    for (let index = 0; index < steps; index += 1) controller.update(FIXED_TIMESTEP);
+    for (let index = 0; index < steps; index += 1) {
+      controller.update(FIXED_TIMESTEP);
+      dice.updatePhysics(FIXED_TIMESTEP);
+      dice.updatePresentation(FIXED_TIMESTEP);
+    }
     controller.updateCamera();
     return controller.snapshot();
   },
+  rollDie: () => {
+    dice.roll();
+    return dice.snapshot();
+  },
+  diceSnapshot: () => dice.snapshot(),
+  settingsSnapshot: () => settings.snapshot(),
+  setMouseSensitivity: (value: number) => {
+    settings.setMouseSensitivity(value);
+    return settings.snapshot();
+  },
+  menuSnapshot: () => ({
+    entryVisible: !entry.classList.contains('dismissed'),
+    pauseVisible: !pauseMenu.hidden,
+    optionsVisible: !optionsMenu.hidden,
+    pointerLocked: input.isPointerLocked(),
+  }),
   jump: () => controller.pressJump(),
   releaseJump: () => controller.releaseJump(),
   packPress: () => {

@@ -20,14 +20,21 @@
         The battlefield is painted. The war is measured in inches.<br />
         You are eight feet tall—and still only a miniature.
       </p>
-      <button id="enter-button" type="button">
-        <span>Enter the battlefield</span>
-        <kbd>Click</kbd>
-      </button>
+      <div class="entry-actions">
+        <button id="enter-button" class="menu-button primary" type="button">
+          <span>Enter the battlefield</span>
+          <kbd>Click</kbd>
+        </button>
+        <button id="main-options-button" class="menu-button secondary" type="button">
+          <span>Options</span>
+          <span aria-hidden="true">›</span>
+        </button>
+      </div>
       <div class="entry-controls" aria-label="Controls">
         <span><kbd>W A S D</kbd> Run</span>
         <span><kbd>Shift</kbd> Sprint</span>
         <span><kbd>Space</kbd> Jump</span>
+        <span><kbd>R</kbd> Roll D6</span>
         <span><kbd>1 2 3</kbd> Body</span>
         <span><kbd>Mouse</kbd> Look</span>
       </div>
@@ -43,7 +50,20 @@
           <small id="pack-readout">Pack ready</small>
         </div>
       </section>
+      <section class="dice-card" aria-label="Physical dice roller">
+        <span class="dice-kicker">Table ordinance / D6</span>
+        <button id="dice-roll-button" type="button">
+          <strong>Roll die</strong>
+          <kbd>R</kbd>
+        </button>
+        <span id="dice-status" class="dice-status">D6 ready</span>
+        <small id="dice-detail">Official 5/8-inch scale</small>
+      </section>
       <div class="crosshair" aria-hidden="true"></div>
+      <div id="dice-announcement" class="dice-announcement" aria-live="assertive">
+        <strong id="dice-announcement-primary"></strong>
+        <span id="dice-announcement-secondary"></span>
+      </div>
       <section class="status-card">
         <span>Deployment</span>
         <strong>Table edge / south</strong>
@@ -56,7 +76,59 @@
       <pre id="debug-readout"></pre>
     </aside>
 
-    <div id="pause-hint" class="pause-hint" hidden>Click to resume field control</div>
+    <aside id="pause-menu" class="menu-overlay" hidden aria-labelledby="pause-title">
+      <section class="menu-dialog pause-dialog">
+        <p class="menu-kicker">Field control interrupted</p>
+        <h2 id="pause-title">Paused</h2>
+        <div class="menu-actions">
+          <button id="resume-button" class="menu-button primary" type="button">
+            <span>Resume</span>
+            <kbd>Click</kbd>
+          </button>
+          <button id="pause-options-button" class="menu-button secondary" type="button">
+            <span>Options</span>
+            <span aria-hidden="true">›</span>
+          </button>
+          <button id="main-menu-button" class="menu-button quiet" type="button">
+            Return to main menu
+          </button>
+        </div>
+        <small class="menu-note">Escape releases field control</small>
+      </section>
+    </aside>
+
+    <aside id="options-menu" class="menu-overlay" hidden aria-labelledby="options-title">
+      <section class="menu-dialog options-dialog">
+        <p id="options-context" class="menu-kicker">Main menu / configuration</p>
+        <h2 id="options-title">Options</h2>
+        <div class="setting-card">
+          <div class="setting-heading">
+            <label for="mouse-sensitivity">Mouse sensitivity</label>
+            <output id="mouse-sensitivity-value" for="mouse-sensitivity">50</output>
+          </div>
+          <p>Scales horizontal and vertical mouse look equally.</p>
+          <input
+            id="mouse-sensitivity"
+            name="mouse-sensitivity"
+            type="range"
+            min="1"
+            max="100"
+            step="1"
+            value="50"
+          />
+          <div class="setting-scale" aria-hidden="true">
+            <span>1 / slower</span>
+            <span>50 / baseline</span>
+            <span>100 / faster</span>
+          </div>
+          <small id="mouse-sensitivity-detail">1.00× look input · saved automatically</small>
+        </div>
+        <div class="menu-actions horizontal">
+          <button id="options-back-button" class="menu-button primary" type="button">Back</button>
+          <button id="options-reset-button" class="menu-button quiet" type="button">Reset to 50</button>
+        </div>
+      </section>
+    </aside>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
