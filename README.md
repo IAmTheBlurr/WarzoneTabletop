@@ -59,6 +59,12 @@ The application uses TypeScript, Three.js, Vite, and `cannon-es` for dice physic
 
 Gameplay tuning lives in [game-constants.json](game-constants.json), imported by [src/constants.ts](src/constants.ts). Input bindings live in [InputManager](src/player/input.ts); the JSON is not a general key-binding interface.
 
+## Constraint Orrery
+
+Warzone Tabletop is intended to be the walkable theater for **Constraint Orrery**: an experiment in visualizing relationships between Warhammer unit stats through paired axes, curve envelopes, and possible three-dimensional constructions, before mapping those relationships to dice requirements.
+
+The [curated starting brief](docs/experiments/constraint-orrery/START_HERE.md) links to the original words and a prior assessment. These three documents preserve exploratory context; they do not describe implemented features or establish the proposed geometry as a result. References to an archive concern the source collection, which is not included here.
+
 ## Prototype limitations
 
 Terrain is procedural and approximate, including the large polygon footprints. Player collision assumes horizontal surfaces and axis-aligned wall volumes. The dice feature still needs a full manual acceptance pass; a successful build or controller check does not establish dice fairness or validate every collision case.
